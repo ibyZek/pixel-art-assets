@@ -270,7 +270,7 @@ try {
 }
 
 // --- BOYA ---
-function handlePaint(data, socket, callback) {
+async function handlePaint(data, socket, callback) {
     try {
         const { x, y, color, steamId, userId: dataUserId, userName, isPremium } = data;
         const userId = steamId || dataUserId; 
@@ -421,7 +421,7 @@ function handlePaint(data, socket, callback) {
     }
 }
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     const initialState = {};
     canvasState.forEach((val, key) => initialState[key] = val); 
 
