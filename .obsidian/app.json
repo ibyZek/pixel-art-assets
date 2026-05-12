@@ -1,0 +1,14 @@
+{
+  "userIgnoreFilters": [
+    "node_modules",
+    ".git",
+    "Oyun/node_modules",
+    "mcp-servers/memory/node_modules",
+    "scratch",
+    "snapshots",
+    "dist",
+    "build",
+    ".next",
+    ".DS_Store"
+  ]
+}

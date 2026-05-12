@@ -1,0 +1,2063 @@
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("Pixelverse Başlatılıyor...");
+    const { 
+        GRID_DIMENSIONS: { WIDTH: GRID_WIDTH, HEIGHT: GRID_HEIGHT }, 
+        LOCK_GRID_SIZE, 
+        parseCoordKey, 
+        snapToGrid, 
+        getRarityConfig, 
+        getRarityColor,
+        screenToWorld
+    } = typeof PixelUtils !== 'undefined' ? PixelUtils : require('./utils');
+    const canvas = document.getElementById('pixel-canvas');
+    const ctx = canvas.getContext('2d');
+    const inspector = document.getElementById('inspector');
+    const totalPixelsDisplay = document.getElementById('total-pixels');
+
+    // --- AYARLAR ---
+    
+    let camera = {
+        x: 0,
+        y: 0,
+        zoom: 2,
+        minZoom: 0.5,
+        maxZoom: 50
+    };
+
+    const pixelData = new Map();
+    const activeLocks = new Map(); // Kilitli 10x10 blokları takip eder
+    let selectedPixel = { x: 0, y: 0 };
+    let selectedColor = '#FFFFFF';
+    let pendingSpend = null; // Şu an harcanmak üzere olan sikke
+    let isDragging = false;
+    let showLockBoundaries = true; // Kilit sınırlarını göster/gizle
+    let paintCooldown = 0; // Kalan cooldown süresi (ms)
+    let lastPaintTimestamp = 0;
+    let lastPaintPos = { x: -1000, y: -1000 };
+    let lastPaintCooldownUsed = 3000;
+    let lastMousePos = { x: 0, y: 0, screenX: 0, screenY: 0 };
+    let activeBugs = []; // [{ x, y, hp }]
+    let myUnlockedAreas = new Set(); // "x-y" formatında kilitli alanlar
+
+    const baseColors = [
+        { code: '#FFFFFF' }, { code: '#000000' }, { code: '#FF0000' }, { code: '#00FF00' }, { code: '#0000FF' },
+        { code: '#FFFF00' }, { code: '#800080' }, { code: '#FFA500' }, { code: '#888888' }, { code: '#A52A2A' }
+    ];
+
+    const COLOR_MAP = {
+        1001: '#6A0DAD', // Royal Purple
+        1002: '#50C878'  // Emerald Green
+    };
+
+    let unlockedColors = [];
+    
+    // --- SES MOTORU (Web Audio API) ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playSound(freq, type, duration, volume = 0.1) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
+    const sfx = {
+        paint: () => playSound(600, 'sine', 0.1, 0.05),
+        loot: () => {
+            playSound(400, 'square', 0.1, 0.05);
+            setTimeout(() => playSound(600, 'square', 0.1, 0.05), 100);
+            setTimeout(() => playSound(800, 'square', 0.3, 0.05), 200);
+        },
+        error: () => playSound(150, 'sawtooth', 0.2, 0.05),
+        click: () => playSound(1000, 'sine', 0.05, 0.02),
+        bugHit: () => {
+            playSound(300, 'sawtooth', 0.1, 0.08);
+            playSound(150, 'sine', 0.05, 0.1);
+        }
+    };
+    
+    let refImage = null;
+    let refOpacity = 0.5;
+    let refPos = { x: 0, y: 0, scale: 1 };
+    let refLocked = false;
+    
+    // --- BLUEPRINT GHOST LAYER ---
+    let activeBlueprint = null; // { w, h, pixels: [{x, y, color}] }
+    let blueprintPos = { x: 0, y: 0 };
+    let blueprintOpacity = 0.4;
+
+    function initCanvas() {
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+    }
+
+    function resizeCanvas() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+        render();
+    }
+
+    // --- RENDER DÖNGÜSÜ ---
+    function render() {
+        ctx.fillStyle = '#0a0a0c';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-GRID_WIDTH / 2 + camera.x, -GRID_HEIGHT / 2 + camera.y);
+
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, GRID_WIDTH, GRID_HEIGHT);
+
+        if (refImage) {
+            ctx.globalAlpha = refOpacity;
+            ctx.drawImage(refImage, refPos.x, refPos.y, refImage.width * refPos.scale, refImage.height * refPos.scale);
+            ctx.globalAlpha = 1.0;
+        }
+
+        // --- BLUEPRINT GHOST LAYER RENDER ---
+        if (activeBlueprint) {
+            ctx.save();
+            ctx.globalAlpha = blueprintOpacity;
+            activeBlueprint.pixels.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.fillRect(blueprintPos.x + p.x, blueprintPos.y + p.y, 1, 1);
+            });
+            // Rehber Çerçeve
+            ctx.strokeStyle = 'rgba(0, 242, 255, 0.5)';
+            ctx.lineWidth = 1 / camera.zoom;
+            ctx.strokeRect(blueprintPos.x, blueprintPos.y, activeBlueprint.w, activeBlueprint.h);
+            ctx.restore();
+        }
+
+        pixelData.forEach((p, key) => {
+            const { x, y } = parseCoordKey(key);
+            const pixel = typeof p === 'string' ? { color: p } : p;
+            ctx.fillStyle = pixel.color;
+            ctx.fillRect(x, y, 1, 1);
+        });
+
+        // BÖCEK RENDER (Yanıp Sönen Efekt)
+        if (activeBugs.length > 0) {
+            const isBlink = Math.sin(Date.now() / 100) > 0;
+            ctx.shadowColor = '#ff0000';
+            activeBugs.forEach(bug => {
+                ctx.fillStyle = isBlink ? '#ff0000' : '#ffff00';
+                ctx.shadowBlur = isBlink ? 5 : 0;
+                ctx.fillRect(bug.x, bug.y, 1, 1);
+            });
+            ctx.shadowBlur = 0;
+        }
+
+
+        // 2. KİLİT KATMANI (Akıllı Sınır - Zarif ve İnce)
+        if (showLockBoundaries) {
+            const now = new Date();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; // İyice silikleştirildi
+            ctx.lineWidth = 1 / camera.zoom; // Izgara ile birebir aynı
+
+            activeLocks.forEach((lock, key) => {
+                const expires = new Date(lock.expires);
+                if (expires > now) {
+                    const [lx, ly] = key.split('-').map(Number);
+                    
+                    // Komşu kontrolü: Eğer komşu da kilitliyse o kenarı çizme
+                    const hasTop = activeLocks.has(`${lx}-${ly - 10}`);
+                    const hasBottom = activeLocks.has(`${lx}-${ly + 10}`);
+                    const hasLeft = activeLocks.has(`${lx - 10}-${ly}`);
+                    const hasRight = activeLocks.has(`${lx + 10}-${ly}`);
+
+                    ctx.beginPath();
+                    if (!hasTop) { ctx.moveTo(lx, ly); ctx.lineTo(lx + 10, ly); }
+                    if (!hasBottom) { ctx.moveTo(lx, ly + 10); ctx.lineTo(lx + 10, ly + 10); }
+                    if (!hasLeft) { ctx.moveTo(lx, ly); ctx.lineTo(lx, ly + 10); }
+                    if (!hasRight) { ctx.moveTo(lx + 10, ly); ctx.lineTo(lx + 10, ly + 10); }
+                    ctx.stroke();
+                } else {
+                    activeLocks.delete(key);
+                }
+            });
+        }
+
+        // Izgara Sistemi
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1 / camera.zoom;
+        ctx.beginPath();
+        for (let x = 0; x <= GRID_WIDTH; x += 10) { ctx.moveTo(x, 0); ctx.lineTo(x, GRID_HEIGHT); }
+        for (let y = 0; y <= GRID_HEIGHT; y += 10) { ctx.moveTo(0, y); ctx.lineTo(GRID_WIDTH, y); }
+        ctx.stroke();
+
+        if (camera.zoom > 10) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 0.5 / camera.zoom;
+            ctx.beginPath();
+            for (let x = 0; x <= GRID_WIDTH; x += 1) { ctx.moveTo(x, 0); ctx.lineTo(x, GRID_HEIGHT); }
+            for (let y = 0; y <= GRID_HEIGHT; y += 1) { ctx.moveTo(0, y); ctx.lineTo(GRID_WIDTH, y); }
+            ctx.stroke();
+        }
+
+        // Seçili Piksel Çerçevesi
+        ctx.strokeStyle = 'rgba(0, 242, 255, 0.8)';
+        ctx.lineWidth = 2 / camera.zoom;
+        ctx.strokeRect(selectedPixel.x, selectedPixel.y, 1, 1);
+
+        // --- GENİŞLEME ALANI VE KİLİTLİ ALANLAR (Zarif ve Standart) ---
+        if (showLockBoundaries) {
+            // Sadece 10x10 kilit sınırlarını çiziyoruz (Aktif kilitlerle aynı stil)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; 
+            ctx.lineWidth = 1 / camera.zoom;
+            
+            // Viewport sınırlarını dünya koordinatlarında doğru hesapla
+            const centerX = GRID_WIDTH / 2 - camera.x;
+            const centerY = GRID_HEIGHT / 2 - camera.y;
+            const halfViewWidth = (canvas.width / 2) / camera.zoom;
+            const halfViewHeight = (canvas.height / 2) / camera.zoom;
+
+            const viewXStart = Math.max(0, Math.floor((centerX - halfViewWidth) / 10) * 10);
+            const viewXEnd = Math.min(GRID_WIDTH, Math.ceil((centerX + halfViewWidth) / 10) * 10 + 10);
+            const viewYStart = Math.max(0, Math.floor((centerY - halfViewHeight) / 10) * 10);
+            const viewYEnd = Math.min(GRID_HEIGHT, Math.ceil((centerY + halfViewHeight) / 10) * 10 + 10);
+
+            for (let x = viewXStart; x < viewXEnd; x += 10) {
+                for (let y = viewYStart; y < viewYEnd; y += 10) {
+                    const isExpansion = (x >= 960 || y >= 540);
+                    if (isExpansion && !myUnlockedAreas.has(`${x}-${y}`)) {
+                        // Sadece komşusu kilitli olmayan kenarları çiz (Smart Border)
+                        const hasTop = (y > 0 && (x < 960 && y - 10 < 540 ? false : !myUnlockedAreas.has(`${x}-${y - 10}`)));
+                        const hasBottom = (y + 10 < GRID_HEIGHT && !myUnlockedAreas.has(`${x}-${y + 10}`));
+                        const hasLeft = (x > 0 && (x - 10 < 960 && y < 540 ? false : !myUnlockedAreas.has(`${x - 10}-${y}`)));
+                        const hasRight = (x + 10 < GRID_WIDTH && !myUnlockedAreas.has(`${x + 10}-${y}`));
+
+                        ctx.beginPath();
+                        if (!hasTop) { ctx.moveTo(x, y); ctx.lineTo(x + 10, y); }
+                        if (!hasBottom) { ctx.moveTo(x, y + 10); ctx.lineTo(x + 10, y + 10); }
+                        if (!hasLeft) { ctx.moveTo(x, y); ctx.lineTo(x, y + 10); }
+                        if (!hasRight) { ctx.moveTo(x + 10, y); ctx.lineTo(x + 10, y + 10); }
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        // Tual Sınırı (Sadece en dış çerçeve)
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2 / camera.zoom;
+        ctx.strokeRect(0, 0, GRID_WIDTH, GRID_HEIGHT);
+
+        // Sikke Harcama Önizlemesi (Izgaraya Oturan Çoklu Blok)
+        if (pendingSpend) {
+            ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+            ctx.strokeStyle = '#ffd700';
+            ctx.lineWidth = 2 / camera.zoom;
+
+            // Seçilmiş Bloklar
+            pendingSpend.coords.forEach(pos => {
+                ctx.fillRect(pos.x, pos.y, 10, 10);
+                ctx.strokeRect(pos.x, pos.y, 10, 10);
+            });
+
+            // Mevcut İmleç (Izgaraya Oturtulmuş 10x10)
+            const snapX = Math.floor(selectedPixel.x / 10) * 10;
+            const snapY = Math.floor(selectedPixel.y / 10) * 10;
+            
+            ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+            ctx.setLineDash([5 / camera.zoom, 5 / camera.zoom]);
+            ctx.fillRect(snapX, snapY, 10, 10);
+            ctx.strokeRect(snapX, snapY, 10, 10);
+            ctx.setLineDash([]);
+
+            // Bilgi Metni
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${16 / camera.zoom}px sans-serif`;
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = 'black';
+            ctx.fillText(`Kalan Hak: ${pendingSpend.charges} | Komşu Alan Seç! (Esc: İptal)`, snapX, snapY - (8 / camera.zoom));
+            ctx.shadowBlur = 0;
+        }
+
+        // Atölye Seçim Çerçevesi
+        if (selectionStart && selectionEnd) {
+            const x = Math.min(selectionStart.x, selectionEnd.x);
+            const y = Math.min(selectionStart.y, selectionEnd.y);
+            const w = Math.abs(selectionStart.x - selectionEnd.x) + 1;
+            const h = Math.abs(selectionStart.y - selectionEnd.y) + 1;
+            
+            ctx.fillStyle = 'rgba(0, 242, 255, 0.2)';
+            ctx.strokeStyle = '#00f2ff';
+            ctx.lineWidth = 3 / camera.zoom;
+            ctx.fillRect(x, y, w, h);
+            ctx.strokeRect(x, y, w, h);
+        }
+
+        ctx.restore();
+        renderRulers();
+        updateMiniMapViewfinder();
+    }
+
+    function renderRulers() {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 242, 255, 0.7)';
+        ctx.font = '10px monospace';
+        let interval = (camera.zoom > 35) ? 1 : (camera.zoom > 8) ? 10 : 50;
+
+        for (let x = 0; x < GRID_WIDTH; x += interval) {
+            const screenX = (x - GRID_WIDTH / 2 + camera.x) * camera.zoom + canvas.width / 2;
+            if (screenX > 0 && screenX < canvas.width) {
+                ctx.fillText(x, screenX + 2, 12);
+                ctx.fillRect(screenX, 0, 1, 5);
+            }
+        }
+        for (let y = 0; y < GRID_HEIGHT; y += interval) {
+            const screenY = (y - GRID_HEIGHT / 2 + camera.y) * camera.zoom + canvas.height / 2;
+            if (screenY > 0 && screenY < canvas.height) {
+                ctx.fillText(y, 2, screenY + 10);
+                ctx.fillRect(0, screenY, 5, 1);
+            }
+        }
+        ctx.restore();
+    }
+
+    // --- ETKİLEŞİM ---
+
+    // Cooldown UI Elementi Oluştur
+    const cooldownEl = document.createElement('div');
+    cooldownEl.id = 'cursor-cooldown';
+    document.body.appendChild(cooldownEl);
+
+    function updateCooldown() {
+        const now = Date.now();
+        const remaining = Math.max(0, lastPaintTimestamp + lastPaintCooldownUsed - now);
+        
+        // Sadece cooldown 0'dan büyükse ve süre bitmemişse göster
+        if (remaining > 0 && lastPaintCooldownUsed > 0) {
+            cooldownEl.style.display = 'block';
+            cooldownEl.style.left = `${lastMousePos.screenX + 15}px`;
+            cooldownEl.style.top = `${lastMousePos.screenY + 15}px`;
+            cooldownEl.textContent = (remaining / 1000).toFixed(1) + 's';
+            cooldownEl.style.color = '#ff4444';
+        } else {
+            cooldownEl.style.display = 'none';
+        }
+        requestAnimationFrame(updateCooldown);
+    }
+    updateCooldown();
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 1 || (e.button === 0 && e.altKey)) { 
+            isDragging = true; 
+            canvas.style.cursor = 'grabbing';
+            lastMousePos = { x: e.clientX, y: e.clientY }; 
+            return; 
+        }
+        
+        const rect = canvas.getBoundingClientRect();
+        const { x: worldX, y: worldY } = screenToWorld(
+            e.clientX, e.clientY,
+            canvas.width, canvas.height,
+            GRID_WIDTH, GRID_HEIGHT,
+            camera.zoom, camera.x, camera.y,
+            rect.left, rect.top
+        );
+
+        if (isSelecting) {
+            selectionStart = { x: worldX, y: worldY };
+            selectionEnd = { x: worldX, y: worldY };
+            canvas.style.cursor = 'cell';
+            showNotification("Alan seçimi başladı. Sürükleyerek alanı belirle.", "info");
+            render();
+            return;
+        }
+
+        const now = Date.now();
+        const dist = Math.sqrt(Math.pow(worldX - lastPaintPos.x, 2) + Math.pow(worldY - lastPaintPos.y, 2));
+        let requiredCooldown = 3000;
+        if (dist <= 10) requiredCooldown = 0;
+        else if (dist > 100) requiredCooldown = 10000;
+
+        const isOnCooldown = (now - lastPaintTimestamp < lastPaintCooldownUsed);
+
+        if (worldX >= 0 && worldX <= GRID_WIDTH && worldY >= 0 && worldY <= GRID_HEIGHT) {
+            if (pendingSpend) {
+                // IZGARAYA OTURT (Snapping)
+                const snapX = Math.floor(worldX / 10) * 10;
+                const snapY = Math.floor(worldY / 10) * 10;
+
+                // 1. Zaten seçilmiş mi?
+                if (pendingSpend.coords.find(p => p.x === snapX && p.y === snapY)) {
+                    showNotification('Bu alanı zaten seçtin!', 'warning');
+                    return;
+                }
+
+                // Kilit/Anahtar mantık kontrolü
+                const isExpansion = (snapX >= 960 || snapY >= 540);
+                const isAreaUnlocked = !isExpansion || myUnlockedAreas.has(`${snapX}-${snapY}`);
+                const isKey = pendingSpend.rarity.includes('Key');
+
+                if (isKey) {
+                    // Anahtar sadece kilitli/genişleme alanlarında kullanılabilir
+                    if (isAreaUnlocked) {
+                        showNotification('Burası zaten açık! Anahtarı kilitli (karanlık) bölgelerde kullanmalısın.', 'warning');
+                        return;
+                    }
+                } else {
+                    // Kilit (Lock) sadece açık alanlarda kullanılabilir
+                    if (!isAreaUnlocked) {
+                        showNotification('Burası henüz haritaya dahil değil! Önce anahtarla açmalısın.', 'warning');
+                        return;
+                    }
+                    // Ayrıca zaten süreyle kilitlenmişse kullanılamaz
+                    const existingPixel = pixelData.get(`${snapX}-${snapY}`);
+                    if (existingPixel && new Date(existingPixel.lockExpires) > new Date()) {
+                        showNotification('Burası zaten bir kilit ile korunuyor!', 'warning');
+                        return;
+                    }
+                }
+
+                // 2. Komşuluk Kontrolü (İlk blok hariç)
+                if (pendingSpend.coords.length > 0) {
+                    const isNeighbor = pendingSpend.coords.some(p => {
+                        const dx = Math.abs(p.x - snapX);
+                        const dy = Math.abs(p.y - snapY);
+                        return (dx === 10 && dy === 0) || (dx === 0 && dy === 10);
+                    });
+                    if (!isNeighbor) {
+                        showNotification('Yeni alan mevcut seçime bitişik olmalı!', 'warning');
+                        return;
+                    }
+                }
+
+                // ALAN SEÇİMİ BAŞARILI
+                pendingSpend.coords.push({ x: snapX, y: snapY });
+                pendingSpend.charges--;
+                sfx.click();
+                
+                if (pendingSpend.charges === 0) {
+                    const itemToSpend = pendingSpend;
+                    pendingSpend = null;
+                    
+                    fetch(`${API_BASE}/api/inventory/spend`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            itemId: itemToSpend.id, 
+                            coords: itemToSpend.coords, 
+                            steamId: steamUser.id 
+                        })
+                    }).then(r => r.json()).then(res => {
+                        if (res.success) showNotification(res.msg, 'success');
+                        else showNotification(res.msg, 'error');
+                        render();
+                    });
+                }
+            } else if (activeBugs.some(b => b.x === worldX && b.y === worldY)) {
+                // BÖCEĞE TIKLANDI (Cooldown'dan Muaf!)
+                sfx.bugHit(); 
+                socket.emit('bug_click', { steamId: steamUser.id, userName: steamUser.name, x: worldX, y: worldY });
+            } else {
+                // DOĞRUDAN BOYAMA (Tıkla ve Boya)
+                if (isOnCooldown) return; 
+                paintPixel(worldX, worldY, selectedColor);
+                
+                // Durumu Güncelle
+                lastPaintTimestamp = Date.now();
+                lastPaintCooldownUsed = requiredCooldown;
+                lastPaintPos = { x: worldX, y: worldY };
+            }
+            render();
+        }
+    });
+
+    window.addEventListener('mouseup', () => {
+        canvas.style.cursor = isSelecting ? 'cell' : 'crosshair';
+        if (isDragging) {
+            isDragging = false;
+        }
+        if (isSelecting && selectionStart && selectionEnd) {
+            isSelecting = false;
+            document.getElementById('selection-info').style.display = 'block';
+            document.getElementById('sel-coords').textContent = `${selectionStart.x},${selectionStart.y} -> ${selectionEnd.x},${selectionEnd.y}`;
+            wsModal.style.display = 'flex';
+            render();
+        }
+        isDragging = false;
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            camera.x += (e.clientX - lastMousePos.x) / camera.zoom;
+            camera.y += (e.clientY - lastMousePos.y) / camera.zoom;
+            lastMousePos = { x: e.clientX, y: e.clientY, screenX: e.clientX, screenY: e.clientY };
+            render();
+        } else {
+            lastMousePos.screenX = e.clientX;
+            lastMousePos.screenY = e.clientY;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const { x: worldX, y: worldY } = screenToWorld(
+            e.clientX, e.clientY,
+            canvas.width, canvas.height,
+            GRID_WIDTH, GRID_HEIGHT,
+            camera.zoom, camera.x, camera.y,
+            rect.left, rect.top
+        );
+
+        if (isSelecting && selectionStart) {
+            selectionEnd = { x: worldX, y: worldY };
+            render();
+            return;
+        }
+
+        if (worldX >= 0 && worldX <= GRID_WIDTH && worldY >= 0 && worldY <= GRID_HEIGHT) {
+            let infoHTML = `<span class="x-val">X: ${worldX}</span> <span class="y-val">Y: ${worldY}</span>`;
+            if (isSelecting) {
+                infoHTML = `<span style="color:#00f2ff; font-weight:900;">[ SEÇİM MODU ]</span> ` + infoHTML;
+            }
+            
+            const pixel = pixelData.get(`${worldX}-${worldY}`);
+            if (pixel && pixel.lockExpires && new Date(pixel.lockExpires) > new Date()) {
+                const isMine = pixel.lockedBy === steamUser.id;
+                infoHTML += `<div class="lock-status ${isMine ? 'mine' : 'others'}">
+                    🔒 ${isMine ? 'Senin Kilidin' : (pixel.lockedByName || 'Bir Oyuncu') + ' tarafından kilitlendi'}
+                </div>`;
+            }
+            
+            inspector.innerHTML = infoHTML;
+            selectedPixel = { x: worldX, y: worldY };
+            render();
+        }
+    });
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (pendingSpend) {
+                pendingSpend = null;
+                showNotification('Harcama iptal edildi', 'info');
+                render();
+            }
+            if (isSelecting) {
+                isSelecting = false;
+                selectionStart = null;
+                selectionEnd = null;
+                canvas.style.cursor = 'crosshair';
+                showNotification('Seçim iptal edildi', 'info');
+                render();
+            }
+            if (refLocked) {
+                refLocked = false;
+                showNotification("Referans kilidi açıldı.", "info");
+            }
+        }
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomSpeed = 0.1;
+        const delta = -Math.sign(e.deltaY);
+        camera.zoom *= (1 + delta * zoomSpeed);
+        camera.zoom = Math.max(camera.minZoom, Math.min(camera.maxZoom, camera.zoom));
+        render();
+    }, { passive: false });
+
+    // --- MINI MAP ---
+    const miniCanvas = document.getElementById('mini-map-canvas');
+    const miniCtx = miniCanvas?.getContext('2d');
+    const viewfinder = document.getElementById('mini-map-viewfinder');
+
+    function renderMiniMap() {
+        if (!miniCanvas || !miniCtx) return;
+        miniCanvas.width = 250;
+        miniCanvas.height = 140;
+        miniCtx.fillStyle = '#000';
+        miniCtx.fillRect(0, 0, miniCanvas.width, miniCanvas.height);
+        
+        const scale = miniCanvas.width / GRID_WIDTH;
+        pixelData.forEach((p, key) => {
+            const [x, y] = key.split('-').map(Number);
+            const pixel = typeof p === 'string' ? { color: p } : p;
+            miniCtx.fillStyle = pixel.color;
+            miniCtx.fillRect(x * scale, y * scale, 1, 1);
+        });
+        updateMiniMapViewfinder();
+    }
+
+    function updateMiniMapViewfinder() {
+        if (!miniCanvas || !viewfinder) return;
+        const scale = miniCanvas.width / GRID_WIDTH;
+        const visibleWidth = canvas.width / camera.zoom;
+        const visibleHeight = canvas.height / camera.zoom;
+        viewfinder.style.width = `${visibleWidth * scale}px`;
+        viewfinder.style.height = `${visibleHeight * scale}px`;
+        viewfinder.style.left = `${(GRID_WIDTH / 2 - camera.x - visibleWidth / 2) * scale}px`;
+        viewfinder.style.top = `${(GRID_HEIGHT / 2 - camera.y - visibleHeight / 2) * scale}px`;
+    }
+
+    // --- SOCKETS ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const steamIdParam = urlParams.get('id');
+    const steamNameParam = urlParams.get('user');
+    const steamAvatarParam = urlParams.get('avatar');
+
+    const serverParam = urlParams.get('server');
+    const API_BASE = serverParam ? serverParam.replace(/\/$/, '') : '';
+    const socket = io(serverParam || undefined, {
+        query: { steamId: steamIdParam }
+    });
+
+    let steamUser = {
+        id: steamIdParam || `guest_${Math.random().toString(36).substr(2, 9)}`,
+        name: steamNameParam || `Oyuncu_${Math.floor(Math.random() * 1000)}`,
+        avatar: steamAvatarParam && steamAvatarParam !== '' ? steamAvatarParam : `https://api.dicebear.com/7.x/avataaars/svg?seed=${steamIdParam || Math.random()}`,
+        isPremium: true
+    };
+
+    window.changeName = () => {
+        const newName = prompt('Yeni isminizi girin:', steamUser.name);
+        if (newName && newName.trim() !== '') {
+            steamUser.name = newName.trim();
+            initSteamUI();
+            showNotification(`İsim "${steamUser.name}" olarak güncellendi!`, 'success');
+        }
+    };
+
+    // --- STEAM INTEGRATION (ELECTRON ONLY) ---
+    let ipcRenderer = null;
+    try {
+        if (window.process && window.process.type === 'renderer') {
+            ipcRenderer = require('electron').ipcRenderer;
+        }
+    } catch (e) {
+        console.log("Tarayıcı modunda çalışılıyor, Steam özellikleri devre dışı.");
+    }
+
+    window.updateSteamPresence = (status) => {
+        if (ipcRenderer) {
+            try {
+                ipcRenderer.send('update-presence', status);
+            } catch (e) {}
+        }
+    };
+
+    // --- STEAM CLOUD SETTINGS ---
+    let gameSettings = { lastColor: '#00f2ff', soundEnabled: true };
+
+    async function syncCloudSettings() {
+        try {
+            const cloudData = await ipcRenderer.invoke('load-settings');
+            if (cloudData) {
+                gameSettings = { ...gameSettings, ...cloudData };
+                // Ayarları uygula
+                selectedColor = gameSettings.lastColor;
+                updateSelectedColorUI();
+                console.log("Steam Cloud Ayarları Yüklendi:", gameSettings);
+            }
+        } catch (e) {
+            console.warn("Cloud ayarları yüklenemedi.");
+        }
+    }
+
+    function saveSettingsToCloud() {
+        ipcRenderer.send('save-settings', gameSettings);
+    }
+
+    function updateSelectedColorUI() {
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            if (btn.dataset.color === selectedColor) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    window.openSteamMarket = () => {
+        if (ipcRenderer) {
+            ipcRenderer.send('open-steam-market');
+        } else {
+            showNotification('Bu özellik sadece Steam uygulamasında mevcuttur.', 'info');
+        }
+    };
+
+    // --- STEAM WORKSHOP TOOLS ---
+    let isSelecting = false;
+    let selectionStart = null;
+    let selectionEnd = null;
+    let fs = null, path = null;
+    try {
+        if (ipcRenderer) {
+            fs = require('fs');
+            path = require('path');
+        }
+    } catch(e) {}
+
+    const wsModal = document.getElementById('workshop-modal');
+    document.getElementById('show-workshop')?.addEventListener('click', () => wsModal.style.display = 'flex');
+    document.getElementById('close-workshop')?.addEventListener('click', () => {
+        wsModal.style.display = 'none';
+        isSelecting = false;
+        canvas.style.cursor = 'crosshair';
+    });
+
+    document.getElementById('start-selection')?.addEventListener('click', () => {
+        isSelecting = true;
+        selectionStart = null;
+        selectionEnd = null;
+        wsModal.style.display = 'none';
+        showNotification("Harita üzerinde sürükleyerek alanı seç!", "info");
+    });
+
+    document.getElementById('cancel-selection')?.addEventListener('click', () => {
+        isSelecting = false;
+        selectionStart = null;
+        selectionEnd = null;
+        canvas.style.cursor = 'crosshair';
+        document.getElementById('selection-info').style.display = 'none';
+        render();
+        showNotification("Secim iptal edildi.", "info");
+    });
+
+    document.getElementById('save-local-jpg')?.addEventListener('click', () => {
+        if (!selectionStart || !selectionEnd) {
+            showNotification("Lutfen once bir alan secin.", "error");
+            return;
+        }
+
+        const name = document.getElementById('blueprint-name').value || "pixel-sablon";
+        const xmin = Math.min(selectionStart.x, selectionEnd.x);
+        const ymin = Math.min(selectionStart.y, selectionEnd.y);
+        const w = Math.abs(selectionEnd.x - selectionStart.x) + 1;
+        const h = Math.abs(selectionEnd.y - selectionStart.y) + 1;
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 1024;
+        canvas.height = 1024;
+        
+        ctx.fillStyle = '#0a0a0c';
+        ctx.fillRect(0, 0, 1024, 1024);
+        
+        const scale = Math.min(800 / w, 800 / h);
+        const ox = (1024 - w * scale) / 2;
+        const oy = (1024 - h * scale) / 2;
+        
+        for (let ix = xmin; ix < xmin + w; ix++) {
+            for (let iy = ymin; iy < ymin + h; iy++) {
+                const p = pixelData.get(`${ix}-${iy}`);
+                if (p) {
+                    ctx.fillStyle = typeof p === 'string' ? p : p.color;
+                    ctx.fillRect(ox + (ix - xmin) * scale, oy + (iy - ymin) * scale, scale + 0.3, scale + 0.3);
+                }
+            }
+        }
+        
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.font = '20px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('PIXELVERSE | SABLON', 1000, 1000);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const link = document.createElement('a');
+        link.download = `${name}.jpg`;
+        link.href = dataUrl;
+        link.click();
+        
+        showNotification("Gorsel yerel olarak kaydedildi.", "success");
+    });
+
+    // --- WORKSHOP TABS ---
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            document.getElementById('workshop-create').style.display = tab === 'create' ? 'block' : 'none';
+            document.getElementById('workshop-browse').style.display = tab === 'browse' ? 'block' : 'none';
+            
+            if (tab === 'browse') updateSubscribedItems();
+        });
+    });
+
+    async function updateSubscribedItems() {
+        if (!ipcRenderer) return;
+        const listEl = document.getElementById('subscribed-list');
+        listEl.innerHTML = '<p style="opacity:0.5;">Yükleniyor...</p>';
+        
+        try {
+            const items = await ipcRenderer.invoke('get-workshop-items');
+            listEl.innerHTML = '';
+            if (items.length === 0) {
+                listEl.innerHTML = '<p style="opacity:0.5;">Henüz abone olunan öğe yok.</p>';
+                return;
+            }
+            
+            items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'workshop-card glass-panel';
+                card.innerHTML = `
+                    <div class="card-info">
+                        <h4>${item.title || 'İsimsiz Şablon'}</h4>
+                        <p>ID: ${item.itemId}</p>
+                    </div>
+                    <button class="btn-success load-bp" data-id="${item.itemId}">Yükle</button>
+                `;
+                card.querySelector('.load-bp').onclick = () => loadBlueprintFromSteam(item);
+                listEl.appendChild(card);
+            });
+        } catch (e) {
+            listEl.innerHTML = '<p style="color:red;">Yükleme hatası.</p>';
+        }
+    }
+
+    async function loadBlueprintFromSteam(item) {
+        if (!fs || !path) return;
+        try {
+            // steamworks.js'in getSubscribedItems çıktısında folderPath de olabilir
+            // Eğer yoksa manuel bulmaya çalışmalıyız ama genellikle itemId üzerinden klasör bulunur.
+            // Bu kısım SDK'ya göre değişiklik gösterebilir.
+            const itemPath = item.folderPath || path.join(process.cwd(), 'temp_workshop_upload'); // Test için
+            const bpPath = path.join(itemPath, 'blueprint.json');
+            
+            if (fs.existsSync(bpPath)) {
+                const data = JSON.parse(fs.readFileSync(bpPath, 'utf8'));
+                activeBlueprint = data;
+                blueprintPos = { x: selectedPixel.x, y: selectedPixel.y };
+                wsModal.style.display = 'none';
+                showNotification(`"${data.name}" yüklendi! Ok tuşlarıyla taşı, Enter ile onayla.`, 'success');
+                render();
+            } else {
+                showNotification("Blueprint dosyası bulunamadı!", "error");
+            }
+        } catch (e) {
+            showNotification("Blueprint yüklenemedi: " + e.message, "error");
+        }
+    }
+
+    // Blueprint Kontrolleri (Ok Tuşları)
+    window.addEventListener('keydown', (e) => {
+        if (!activeBlueprint) return;
+        
+        if (e.key === 'ArrowUp') blueprintPos.y--;
+        if (e.key === 'ArrowDown') blueprintPos.y++;
+        if (e.key === 'ArrowLeft') blueprintPos.x--;
+        if (e.key === 'ArrowRight') blueprintPos.x++;
+        if (e.key === 'Enter') {
+            activeBlueprint = null;
+            showNotification("Blueprint yerleşimi tamamlandı.", "info");
+        }
+        if (e.key === 'Escape') {
+            activeBlueprint = null;
+            showNotification("Blueprint kaldırıldı.", "info");
+        }
+        render();
+    });
+
+    document.getElementById('upload-blueprint')?.addEventListener('click', () => {
+        const btn = document.getElementById('upload-blueprint');
+        const name = document.getElementById('blueprint-name').value;
+        if (!name) return showNotification("Lütfen bir isim gir!", "error");
+        
+        // Butonu devre dışı bırak (Çift tıklamayı ve 'method busy' hatasını önlemek için)
+        btn.disabled = true;
+        btn.textContent = "Yukleniyor...";
+        btn.style.opacity = "0.5";
+        
+        // Alan verisini hazırla
+        const xmin = Math.min(selectionStart.x, selectionEnd.x);
+        const ymin = Math.min(selectionStart.y, selectionEnd.y);
+        const w = Math.abs(selectionStart.x - selectionEnd.x) + 1;
+        const h = Math.abs(selectionStart.y - selectionEnd.y) + 1;
+        
+        const areaData = [];
+        for (let ix = xmin; ix < xmin + w; ix++) {
+            for (let iy = ymin; iy < ymin + h; iy++) {
+                const p = pixelData.get(`${ix}-${iy}`);
+                if (p) areaData.push({ x: ix - xmin, y: iy - ymin, color: typeof p === 'string' ? p : p.color });
+            }
+        }
+
+        const tempDir = saveSelectionAsFile(name, { name, w, h, pixels: areaData });
+        if (tempDir) {
+            ipcRenderer.send('workshop-upload', {
+                title: name,
+                description: "Pixelverse Sablonu",
+                imagePath: path.join(tempDir, 'preview.png'), 
+                contentPath: tempDir
+            });
+            showNotification("Atolye'ye gonderiliyor, lutfen bekleyin...", "info");
+        } else {
+            // Hata durumunda butonu geri aç
+            btn.disabled = false;
+            btn.textContent = "Atolye'ye Yukle";
+            btn.style.opacity = "1";
+        }
+    });
+
+    function saveSelectionAsFile(name, data) {
+        if (!fs || !path) return null;
+        const tempDir = path.join(process.cwd(), 'temp_workshop_upload');
+        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+        
+        // 1. Blueprint JSON dosyasını kaydet
+        const contentPath = path.join(tempDir, 'blueprint.json');
+        fs.writeFileSync(contentPath, JSON.stringify(data));
+        
+        // 2. Önizleme Resmi Oluştur (Professional Workshop Preview)
+        const previewCanvas = document.createElement('canvas');
+        const pCtx = previewCanvas.getContext('2d');
+        previewCanvas.width = 512;
+        previewCanvas.height = 512;
+        
+        // Arka Plan
+        pCtx.fillStyle = '#0a0a0c';
+        pCtx.fillRect(0, 0, 512, 512);
+        
+        // Pikselleri Çiz (Merkezle ve Ölçekle)
+        const scale = Math.min(400 / data.w, 400 / data.h);
+        const offsetX = (512 - data.w * scale) / 2;
+        const offsetY = (512 - data.h * scale) / 2;
+        
+        data.pixels.forEach(p => {
+            pCtx.fillStyle = p.color;
+            pCtx.fillRect(offsetX + p.x * scale, offsetY + p.y * scale, scale, scale);
+        });
+        
+        // Çerçeve Ekle
+        pCtx.strokeStyle = '#00f2ff';
+        pCtx.lineWidth = 4;
+        pCtx.strokeRect(20, 20, 472, 472);
+        
+        // İsim Yaz
+        pCtx.fillStyle = '#fff';
+        pCtx.font = 'bold 24px monospace';
+        pCtx.textAlign = 'center';
+        pCtx.fillText(name.toUpperCase(), 256, 490);
+        
+        // PNG olarak kaydet (Electron Buffer üzerinden)
+        const dataUrl = previewCanvas.toDataURL('image/png');
+        const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+        fs.writeFileSync(path.join(tempDir, 'preview.png'), base64Data, 'base64');
+        
+        return tempDir;
+    }
+
+    ipcRenderer?.on('workshop-status', (event, res) => {
+        const btn = document.getElementById('upload-blueprint');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Atolye'ye Yukle";
+            btn.style.opacity = "1";
+        }
+
+        if (res.success) {
+            showNotification("Atolye ogesi basariyla olusturuldu!", "success");
+            // Başarılı olduktan sonra modu kapat ve temizle
+            isSelecting = false;
+            selectionStart = null;
+            selectionEnd = null;
+            document.getElementById('selection-info').style.display = 'none';
+            document.getElementById('workshop-modal').style.display = 'none';
+            render();
+        } else {
+            showNotification("Hata: " + res.error, "error");
+        }
+    });
+    function initSteamUI() {
+        syncCloudSettings();
+        const usernameEl = document.getElementById('steam-username');
+        const avatarEl = document.querySelector('.steam-avatar');
+        if (usernameEl) usernameEl.textContent = steamUser.name;
+        if (avatarEl) avatarEl.src = steamUser.avatar;
+        
+        // Workshop browse listesini ilk girişte doldurmaya çalış
+        if (ipcRenderer) {
+            updateSubscribedItems();
+        }
+    }
+
+    let myUnlockedColors = new Set();
+    socket.on('init_data', (data) => {
+        activeLocks.clear();
+        const pixels = data.pixels || data;
+        Object.keys(pixels).forEach(key => {
+            const val = pixels[key];
+            pixelData.set(key, val);
+            if (val.lockExpires && new Date(val.lockExpires) > new Date()) {
+                const [x, y] = key.split('-').map(Number);
+                const blockX = Math.floor(x / 10) * 10;
+                const blockY = Math.floor(y / 10) * 10;
+                activeLocks.set(`${blockX}-${blockY}`, { 
+                    expires: val.lockExpires, 
+                    lockedBy: val.lockedBy,
+                    lockedByName: val.lockedByName 
+                });
+            }
+        });
+
+        if (data.activeBugs) {
+            activeBugs = data.activeBugs;
+        }
+
+        // Kilitli alanlari yukle
+        if (data.unlocked) {
+            myUnlockedAreas.clear();
+            data.unlocked.forEach(area => {
+                myUnlockedAreas.add(`${area.x_block}-${area.y_block}`);
+            });
+        }
+        
+        // Kullanıcının kalıcı açtığı renkleri yükle
+        if (data.unlockedColors) {
+            myUnlockedColors = new Set(data.unlockedColors);
+            initPalette();
+        }
+
+        if (totalPixelsDisplay) totalPixelsDisplay.textContent = pixelData.size;
+        render();
+        renderMiniMap();
+    });
+
+    socket.on('area_unlocked', (data) => {
+        if (data.steamId === steamUser.id) {
+            data.coords.forEach(pos => {
+                myUnlockedAreas.add(`${pos.x}-${pos.y}`);
+            });
+            showNotification("Yeni bölgeler başarıyla aktif edildi!", "success");
+            render();
+        }
+    });
+
+    socket.on('bug_spawned', (data) => {
+        activeBugs.push({ x: data.x, y: data.y, hp: data.hp || 1, maxHp: data.maxHp || 1, type: data.type || 'normal' });
+        addLogEntry(data.x, data.y, '#ff4444', `🐜 ${data.msg}`, null, 'SİSTEM');
+        showNotification(data.msg, 'warning');
+        sfx.loot(); 
+    });
+
+    socket.on('bug_hit', (data) => {
+        const bug = activeBugs.find(b => b.x === data.x && b.y === data.y);
+        if (bug) bug.hp = data.hp;
+        // Hasar efekti eklenebilir
+    });
+
+    socket.on('bug_killed', (data) => {
+        addLogEntry(data.x, data.y, '#00ff00', `💀 ${data.msg}`, { rarity: data.rarity, type: 'Coin' }, 'SİSTEM');
+        
+        if (data.winnerId === steamUser.id) {
+            sfx.loot();
+            updateSteamPresence("Böcek Avcısı! 🏆");
+            showNotification(`🏆 TEBRİKLER! Böceği sen hakladın ve ${data.rarity} kazandın!`, "#ffd700");
+            
+            // Steam Envanterine Ekle (Gerçek Ödül)
+            if (ipcRenderer) {
+                ipcRenderer.send('trigger-item-drop', {
+                    definitionId: data.defId || 200, 
+                    x: data.x,
+                    y: data.y,
+                    rarity: data.rarity || 'Silver'
+                });
+
+                // Bonus Renk Varsa Onu Da Ekle
+                if (data.bonusColorDefId) {
+                    setTimeout(() => {
+                        ipcRenderer.send('trigger-item-drop', {
+                            definitionId: data.bonusColorDefId,
+                            x: data.x,
+                            y: data.y,
+                            rarity: 'Legendary' // Renkler efsanevi kabul edilsin
+                        });
+                    }, 1000); // Küçük bir gecikme ile gönderelim
+                }
+            }
+        } else {
+            showNotification(data.msg, 'success');
+        }
+        
+        const index = activeBugs.findIndex(b => b.x === data.x && b.y === data.y);
+        if (index !== -1) activeBugs.splice(index, 1);
+        render();
+    });
+
+    socket.on('loot_found', (data) => {
+        updateSteamPresence(`${data.rarity.toUpperCase()} Hazine Buldu!`);
+        sfx.loot();
+        showNotification(data.msg, '#ffd700');
+        
+        // Steam Envanterine Ekle (Electron modundaysak)
+        if (ipcRenderer && data.steamDefinitionId) {
+            ipcRenderer.send('trigger-item-drop', {
+                definitionId: data.steamDefinitionId,
+                x: data.x,
+                y: data.y,
+                rarity: data.rarity
+            });
+        }
+    });
+
+    // Steam Envanter Güncellendiğinde
+    ipcRenderer?.on('inventory-updated', (event, items) => {
+        console.log("Steam Envanteri Güncellendi:", items);
+        showNotification("Steam Envanterine yeni öğe eklendi!", "success");
+        if (typeof refreshInventory === 'function') refreshInventory(); // Listeyi anında tazele
+    });
+
+    // --- TIME-LAPSE REPLAY LOGIC ---
+    document.getElementById('view-timelapse')?.addEventListener('click', async () => {
+        if (!selectionStart || !selectionEnd) return;
+        
+        const xmin = Math.min(selectionStart.x, selectionEnd.x);
+        const ymin = Math.min(selectionStart.y, selectionEnd.y);
+        const xmax = Math.max(selectionStart.x, selectionEnd.x);
+        const ymax = Math.max(selectionStart.y, selectionEnd.y);
+        
+        showNotification("Geçmiş verisi indiriliyor...", "info");
+        
+        try {
+            const res = await fetch(`${API_BASE}/api/history/${xmin}/${ymin}/${xmax}/${ymax}`);
+            const history = await res.json();
+            
+            if (history.length === 0) {
+                showNotification("Bu alan için henüz bir geçmiş kaydı yok.", "warning");
+                return;
+            }
+            
+            startReplay(history, xmin, ymin, xmax - xmin + 1, ymax - ymin + 1);
+        } catch (e) {
+            showNotification("Bağlantı hatası!", "error");
+        }
+    });
+
+    function startReplay(history, ox, oy, w, h) {
+        // Geçici bir modal ve canvas oluştur
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay replay-mode';
+        modal.innerHTML = `
+            <div class="modal-content glass-panel" style="max-width: 90%; width: auto;">
+                <div class="modal-header">
+                    <h2>🕒 Time-Lapse Replay [${w}x${h}]</h2>
+                    <button class="btn close-replay">Kapat</button>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:20px;">
+                    <canvas id="replay-canvas" style="border: 1px solid #333; max-width: 100%; image-rendering: pixelated;"></canvas>
+                    <div class="replay-controls" style="display:flex; gap:15px; align-items:center;">
+                        <button class="btn" id="replay-play">⏯️ Duraklat</button>
+                        <button class="btn" id="replay-gif" style="background:#E91E63; border:1px solid #F06292;">💾 GIF Olarak Kaydet</button>
+                        <span id="replay-progress">0 / ${history.length}</span>
+                        <input type="range" id="replay-speed" min="1" max="100" value="50">
+                        <span>Hız</span>
+                    </div>
+                    <div id="gif-status" style="display:none; color:#00f2ff; font-size:12px;">GIF Hazırlanıyor... <span id="gif-percent">0</span>%</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        const rCanvas = document.getElementById('replay-canvas');
+        const rCtx = rCanvas.getContext('2d');
+        const zoom = Math.min(800 / w, 600 / h, 20); // Maksimum 20x zoom
+        rCanvas.width = w * zoom;
+        rCanvas.height = h * zoom;
+        rCtx.imageSmoothingEnabled = false;
+        
+        let index = 0;
+        let isPaused = false;
+        let speed = 50;
+        
+        function drawFrame() {
+            if (isPaused || index >= history.length) return;
+            
+            const p = history[index];
+            rCtx.fillStyle = p.color;
+            rCtx.fillRect((p.x - ox) * zoom, (p.y - oy) * zoom, zoom, zoom);
+            
+            index++;
+            document.getElementById('replay-progress').textContent = `${index} / ${history.length}`;
+            
+            if (index < history.length) {
+                setTimeout(drawFrame, 101 - speed);
+            }
+        }
+        
+        document.querySelector('.close-replay').onclick = () => modal.remove();
+        document.getElementById('replay-play').onclick = (e) => {
+            isPaused = !isPaused;
+            e.target.textContent = isPaused ? '▶️ Başlat' : '⏯️ Duraklat';
+            if (!isPaused) drawFrame();
+        };
+        document.getElementById('replay-speed').oninput = (e) => speed = e.target.value;
+        
+        document.getElementById('replay-gif').onclick = async () => {
+            if (typeof gifshot === 'undefined') {
+                showNotification("GIF kütüphanesi yüklenemedi. Lütfen internet bağlantınızı kontrol edin.", "error");
+                return;
+            }
+            
+            isPaused = true;
+            document.getElementById('replay-play').textContent = '▶️ Başlat';
+            document.getElementById('gif-status').style.display = 'block';
+            
+            const frames = [];
+            const tempCanvas = document.createElement('canvas');
+            const tCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = rCanvas.width;
+            tempCanvas.height = rCanvas.height;
+            
+            tCtx.fillStyle = '#111';
+            tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            // Kareleri önceden oluştur (Daha hızlı)
+            // Çok uzunsa (örn > 200 kare) her 2 veya 3 karede bir alabiliriz
+            const step = history.length > 300 ? Math.ceil(history.length / 300) : 1;
+            
+            for (let i = 0; i < history.length; i++) {
+                const p = history[i];
+                tCtx.fillStyle = p.color;
+                tCtx.fillRect((p.x - ox) * zoom, (p.y - oy) * zoom, zoom, zoom);
+                
+                if (i % step === 0) {
+                    frames.push(tempCanvas.toDataURL());
+                }
+                
+                if (i % 10 === 0) {
+                    document.getElementById('gif-percent').textContent = Math.round((i / history.length) * 50);
+                }
+            }
+            
+            gifshot.createGIF({
+                images: frames,
+                gifWidth: rCanvas.width,
+                gifHeight: rCanvas.height,
+                interval: 0.1, // 10 fps
+                numFrames: frames.length
+            }, (obj) => {
+                if (!obj.error) {
+                    const link = document.createElement('a');
+                    link.href = obj.image;
+                    link.download = `pixelverse-replay-${Date.now()}.gif`;
+                    link.click();
+                    showNotification("GIF başarıyla indirildi!", "success");
+                } else {
+                    showNotification("GIF oluşturma hatası!", "error");
+                }
+                document.getElementById('gif-status').style.display = 'none';
+            });
+        };
+        
+        rCtx.fillStyle = '#111';
+        rCtx.fillRect(0, 0, rCanvas.width, rCanvas.height);
+        drawFrame();
+    }
+
+    socket.on('loot_announcement', (data) => {
+        addLogEntry(null, null, null, `💰 ${data.msg}`, { rarity: data.rarity, type: 'Coin' }, data.userName);
+    });
+
+    // Eski addLogEntry silindi, 1090. satırdaki gelişmiş versiyon kullanılıyor.
+
+    socket.on('update', (data) => {
+        if (!data) return;
+        console.log(`[Socket] Update received for ${data.x},${data.y}`);
+        pixelData.set(`${data.x}-${data.y}`, { color: data.color, lockExpires: data.lockExpires });
+        
+        if (data.loot) {
+            const color = getRarityColor(data.loot.rarity);
+            const lootMsg = `<span style="color:${color}; font-weight:bold;">${data.user}</span> ${data.loot.type} buldu!`;
+
+            showNotification(`✨ ${data.user} ${data.loot.type} Buldu!`, color);
+            addLogEntry(data.x, data.y, data.color, lootMsg, data.loot, data.user);
+            sfx.loot();
+        } else {
+            const user = data.user || 'Birisi';
+            addLogEntry(data.x, data.y, data.color, `<span style="color:${data.color}; font-weight:bold;">${user}</span> [${data.x},${data.y}] boyandı`, null, user);
+            if (data.user === steamUser.name) sfx.paint(); // Sadece kendi boyamanda ses çıksın
+        }
+        if (totalPixelsDisplay) totalPixelsDisplay.textContent = pixelData.size;
+        render();
+        renderMiniMap();
+    });
+
+    socket.on('area_lock', (data) => {
+        const { coords, size, expires, lockedBy, lockedByName } = data;
+        coords.forEach(pos => {
+            const blockKey = `${pos.x}-${pos.y}`;
+            activeLocks.set(blockKey, { expires, lockedBy, lockedByName });
+            
+            for (let ix = pos.x; ix < pos.x + size; ix++) {
+                for (let iy = pos.y; iy < pos.y + size; iy++) {
+                    const key = `${ix}-${iy}`;
+                    const current = pixelData.get(key) || { color: '#111' };
+                    pixelData.set(key, { ...current, lockExpires: expires, lockedBy: lockedBy, lockedByName: lockedByName });
+                }
+            }
+        });
+        showNotification(`Yeni bir bölge kilitlendi!`, 'info');
+        render();
+    });
+
+    socket.on('error', (data) => {
+        showNotification(data.msg, 'error');
+        sfx.error(); // Hata sesi
+    });
+
+    function getItemIcon(type, rarity = 'Common', owner = 'GİZEMLİ', date = new Date(), size = 40) {
+        const colors = { 
+            'Legendary': { base: '#00f2ff', dark: '#006666', shine: '#ccffff' }, 
+            'Epic': { base: '#ffd700', dark: '#b8860b', shine: '#fff8dc' }, 
+            'Rare': { base: '#c0c0c0', dark: '#708090', shine: '#ffffff' }, 
+            'Common': { base: '#cd7f32', dark: '#8b4513', shine: '#ffebcd' } 
+        };
+        const c = colors[rarity] || colors['Common'];
+        const d = new Date(date);
+        const dateStr = d.toLocaleDateString('tr-TR');
+        const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        const finder = (owner || 'Bilinmiyor').toUpperCase().substring(0, 12);
+        
+        return `
+            <svg viewBox="0 0 100 100" style="width:${size}px; height:${size}px; filter: drop-shadow(0 0 10px rgba(0,0,0,0.5)); overflow: visible;">
+                <defs>
+                    <filter id="noise" x="0" y="0" width="100%" height="100%">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+                        <feColorMatrix type="matrix" values="0 0 0 0 0, 0 0 0 0 0, 0 0 0 0 0, 0 0 0 0.15 0" />
+                    </filter>
+                    <path id="upPathInv" d="M 15,50 A 35,35 0 1,1 85,50" />
+                    <path id="loPathInv" d="M 15,50 A 35,35 0 0,0 85,50" />
+                </defs>
+                
+                <!-- Dış Kapsül (Şeffaf Plastik) -->
+                <circle cx="50" cy="50" r="49" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+                
+                <!-- Ana Para Gövdesi -->
+                <circle cx="50" cy="50" r="45" fill="${c.base}" stroke="${c.dark}" stroke-width="1.5"/>
+                <circle cx="50" cy="50" r="45" filter="url(#noise)"/>
+                
+                <!-- Kenar Detayları (Halkalar) -->
+                <circle cx="50" cy="50" r="41" fill="none" stroke="${c.dark}" stroke-width="0.5" opacity="0.5"/>
+                <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+                
+                <!-- Kale Silueti (Afyon Kalesi Esintili) -->
+                <path d="M30 65 L32 58 L35 59 L38 52 L42 55 L48 45 L52 45 L58 55 L62 52 L65 59 L68 58 L70 65 Z" fill="${c.dark}" opacity="0.25"/>
+                <path d="M45 45 L55 45 L55 42 L52 42 L52 38 L48 38 L48 42 L45 42 Z" fill="${c.dark}" opacity="0.25"/>
+                
+                <!-- Üst Yazı (Kazınmış Efektli) -->
+                <text font-size="6.5" font-weight="900" fill="${c.dark}" opacity="0.8">
+                    <textPath href="#upPathInv" startOffset="50%" text-anchor="middle">
+                        ${finder} • PIXELVERSE
+                    </textPath>
+                </text>
+                
+                <!-- Merkez Harf (Kabartmalı) -->
+                <text x="50" y="62" font-size="24" font-weight="900" fill="${c.dark}" text-anchor="middle" style="text-shadow: 1px 1px 1px ${c.shine}">${rarity[0]}</text>
+                
+                <!-- Alt Yazı (Kazınmış Efektli) -->
+                <text font-size="5.5" font-weight="900" fill="${c.dark}" opacity="0.8">
+                    <textPath href="#loPathInv" startOffset="50%" text-anchor="middle">
+                        ${dateStr} • ${timeStr}
+                    </textPath>
+                </text>
+                
+                <!-- Metalik Parlama -->
+                <path d="M25 25 Q 50 10 75 25" fill="none" stroke="white" stroke-width="2" opacity="0.1" stroke-linecap="round"/>
+            </svg>`;
+    }
+
+    function addLogEntry(x, y, color, msg, loot = null, user = 'Oyuncu') {
+        const activityLog = document.getElementById('activity-log');
+        if (!activityLog) return;
+        
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = now.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
+
+        const iconHtml = loot ? getItemIcon(loot.type, loot.rarity, user, now) : `<div style="width:12px; height:12px; background:${color}; border-radius:2px;"></div>`;
+        const borderColor = loot ? getRarityColor(loot.rarity) : 'transparent';
+
+        entry.innerHTML = `
+            <div style="display:flex; flex-direction:column; gap:4px; ${loot ? 'border-left: 3px solid ' + borderColor + '; padding-left:8px;' : ''}">
+                <div style="display:flex; justify-content:space-between; font-size:9px; opacity:0.6; font-family:monospace;">
+                    <span>PIXELVERSE</span>
+                    <span>${dateStr} ${timeStr}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <div style="flex-shrink:0;">${iconHtml}</div>
+                    <div style="font-size:12px; line-height:1.3;">${msg}</div>
+                </div>
+            </div>
+        `;
+        activityLog.prepend(entry);
+        if (activityLog.children.length > 50) activityLog.lastChild.remove();
+    }
+
+    function showNotification(msg, typeOrColor) {
+        const notif = document.createElement('div');
+        notif.className = `notification`;
+        if (['error', 'warning', 'info', 'success'].includes(typeOrColor)) {
+            notif.classList.add(typeOrColor);
+        } else {
+            notif.style.background = typeOrColor;
+            notif.style.boxShadow = `0 0 20px ${typeOrColor}66`;
+        }
+        notif.textContent = msg;
+        document.body.appendChild(notif);
+        setTimeout(() => notif.remove(), 3000);
+    }
+
+    const invModal = document.getElementById('inventory-modal');
+    const invList = document.getElementById('inventory-list');
+
+    async function refreshInventory() {
+        if (!invList) return;
+        invList.innerHTML = '<div class="loading-state">Hazineler yükleniyor...</div>';
+        
+        try {
+            const lootHistory = await ipcRenderer.invoke('get-loot-history');
+            
+            // HİBRİT ÇEKİM: Web verisini ve yerel veritabanını al
+            const [webSteamItems, localInventory] = await Promise.all([
+                ipcRenderer.invoke('get-inventory'),
+                fetch(`${API_BASE}/api/inventory/${steamUser.id}`).then(res => res.json())
+            ]);
+
+            // Tüm Steam eşyalarını birleştir ve ID'ye göre tekilleştir
+            const allSteamItemsMap = new Map();
+            (webSteamItems || []).forEach(item => {
+                const id = (item.itemId || item.itemid || item.assetid || '').toString();
+                const dId = (item.itemDefinitionId || item.itemdefid || '').toString();
+                console.log(`[Inventory Check] ID: ${id}, DefID: ${dId}`, item);
+                if (id) allSteamItemsMap.set(id, item);
+            });
+            
+            // Yerel olarak açılmış Steam ID'lerini topla
+            const unlockedSteamIds = new Set((localInventory || []).filter(i => i.steamItemId).map(i => i.steamItemId.toString()));
+            
+            // --- OTOMATİK SENKRONİZASYON (Arka Planda Temizlik) ---
+            for (const id of allSteamItemsMap.keys()) {
+                if (unlockedSteamIds.has(id)) {
+                    ipcRenderer.invoke('consume-item', id); // Steam'den otomatik sil
+                }
+            }
+
+            // Nadir Renkleri Ayıkla ve Paleti Güncelle
+            const processedColors = new Set();
+            myUnlockedColors.clear(); // Set'i temizle ve backend verisiyle doldur
+            
+            // 1. Lokal Veritabanındaki Renkler (AKTİF EDİLMİŞ)
+            (localInventory || []).filter(i => i.itemType === 'Color' && i.status === 'activated').forEach(item => {
+                const rarityStr = item.rarity || '';
+                const defId = parseInt(rarityStr.replace('Color-', ''));
+                const colorCode = COLOR_MAP[defId];
+                if (colorCode && !processedColors.has(defId)) {
+                    myUnlockedColors.add(colorCode);
+                    processedColors.add(defId);
+                }
+            });
+
+            initPalette(); 
+            
+            // --- ENVANTER LISTESINI OLUŞTUR ---
+            let html = '<div class="unified-grid">';
+            
+            // 1. Steam Eşyaları (Birleştirilmiş ve filtrelenmiş)
+            const steamItemsHtml = Array.from(allSteamItemsMap.values())
+                .filter(item => {
+                    const id = (item.itemId || item.itemid || item.assetid || '').toString();
+                    return id && !unlockedSteamIds.has(id);
+                })
+                .map(item => {
+                    const currentItemId = (item.itemId || item.itemid || item.assetid).toString();
+                    const currentDefId = (item.itemDefinitionId || item.itemdefid).toString();
+                    
+                    const defIdNum = parseInt(currentDefId);
+                    const itemData = {
+                        100: { name: 'Copper Lock', color: '#b87333', img: item.icon_url || '' },
+                        200: { name: 'Silver Lock', color: '#c0c0c0', img: item.icon_url || '' },
+                        300: { name: 'Gold Lock', color: '#ffd700', img: item.icon_url || '' },
+                        310: { name: 'Diamond Lock', color: '#00f2ff', img: item.icon_url || '' },
+                        320: { name: 'Platinum Lock', color: '#E5E4E2', img: item.icon_url || '' },
+                        400: { name: 'Copper Key', color: '#b87333', img: item.icon_url || '' },
+                        500: { name: 'Silver Key', color: '#c0c0c0', img: item.icon_url || '' },
+                        600: { name: 'Gold Key', color: '#ffd700', img: item.icon_url || '' },
+                        700: { name: 'Diamond Key', color: '#00f2ff', img: item.icon_url || '' },
+                        800: { name: 'Platinum Key', color: '#E5E4E2', img: item.icon_url || '' },
+                        1001: { name: 'Royal Purple', color: '#6A0DAD', img: item.icon_url || '', isColor: true },
+                        1002: { name: 'Emerald Green', color: '#50C878', img: item.icon_url || '', isColor: true }
+                    }[defIdNum] || { name: item.name || `Bilinmeyen (#${defIdNum})`, color: '#fff', img: item.image || '' };
+
+                    // Steam ID üzerinden tam eşleşme ara
+                    const match = lootHistory.find(l => l.item_id === currentItemId);
+
+                    console.log(`Matching for ${currentItemId} (${itemData.name}):`, { 
+                        foundMatch: !!match, 
+                        historyCount: lootHistory.length
+                    });
+
+                    // --- OTOMATİK METADATA GÜNCELLEME ---
+                    if (match && currentItemId) {
+                        ipcRenderer.invoke('update-item-metadata', {
+                            itemId: currentItemId,
+                            steamId: steamUser.id,
+                            props: {
+                                discovery_location: `${match.x}, ${match.y}`,
+                                discovery_time: new Date(match.timestamp).toLocaleString('tr-TR'),
+                                found_by: steamUser.name || 'Bilinmeyen Kaşif'
+                            }
+                        }).then(res => console.log(`🚀 Metadata Push Result for ${currentItemId}:`, res))
+                          .catch(err => console.error(`❌ Metadata Push Error:`, err));
+                    }
+
+                    const displayMeta = match 
+                        ? `<div class="meta-row">Konum: ${match.x}, ${match.y}</div><div class="meta-row">Tarih: ${new Date(match.timestamp).toLocaleDateString()}</div>`
+                        : `<div class="meta-row">Etkinlik Odulu</div><div class="meta-row">Tarih: ${new Date().toLocaleDateString()}</div>`;
+
+                    return `
+                    <div class="inventory-card-pro" style="border-top: 3px solid ${itemData.color}">
+                        ${itemData.img ? `<img src="${itemData.img}" class="item-icon-large">` : `<div class="item-icon-large color-preview-box" style="background:${itemData.color}; width:60px; height:60px; border-radius:8px; margin: 0 auto 15px;"></div>`}
+                        <div class="card-title-group">
+                            <div class="item-name-tag" style="color: ${itemData.color}">${itemData.name}</div>
+                            <div class="item-id-tag">Steam ID: ${currentItemId}</div>
+                        </div>
+                        <div class="card-meta-integrated">${displayMeta}</div>
+                        <div class="card-actions">
+                            <button class="btn-pro unlock" onclick="openSteamLoot('${currentItemId}', '${currentDefId}', event)">KILIDI AC</button>
+                            <button class="btn-pro sell" onclick="sellOnSteam('${currentItemId}')">SAT</button>
+                        </div>
+                    </div>`;
+                }).join('');
+
+            // Lokal Eşyalar (Açılmış)
+            const localItemsHtml = (localInventory || []).filter(i => i.status === 'opened').map(item => {
+                if (item.itemType === 'Color') {
+                    const rarityStr = item.rarity || '';
+                    const defId = parseInt(rarityStr.replace('Color-', ''));
+                    const name = COLOR_MAP[defId] ? (defId === 1001 ? 'Royal Purple' : 'Emerald Green') : 'Bilinmeyen Renk';
+                    const color = COLOR_MAP[defId] || '#fff';
+
+                    return `
+                    <div class="inventory-card-pro" style="border-top: 3px solid ${color}">
+                        <div class="unlocked-badge">ACILDI</div>
+                        <div class="item-icon-large color-preview-box" style="background:${color}; width:60px; height:60px; border-radius:8px; margin: 0 auto 15px;"></div>
+                        <div class="card-title-group">
+                            <div class="item-name-tag" style="color: ${color}">${name}</div>
+                            <div class="item-id-tag">Oyun ID: #${item.id}</div>
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn-pro use-now" onclick='activateColor(${JSON.stringify(item)})'>KULLAN</button>
+                        </div>
+                    </div>`;
+                }
+
+                const colors = { 'Bronze': '#cd7f32', 'Silver': '#c0c0c0', 'Gold': '#ffd700', 'Diamond': '#00f2ff', 'Platinum': '#E5E4E2' };
+                const imgs = {
+                    'Bronze': 'https://raw.githubusercontent.com/ibyZek/pixel-art-assets/5e9c7b0f5d9158ba0bc64d575c9265a549bef487/silver_coin_z_pixelart_1777927505894.png', // Bronze placeholder
+                    'Silver': 'https://raw.githubusercontent.com/ibyZek/pixel-art-assets/5e9c7b0f5d9158ba0bc64d575c9265a549bef487/silver_coin_z_pixelart_1777927505894.png',
+                    'Gold': 'https://raw.githubusercontent.com/ibyZek/pixel-art-assets/5e9c7b0f5d9158ba0bc64d575c9265a549bef487/gold_coin_z_pixelart_1777927492083.png',
+                    'Diamond': 'https://raw.githubusercontent.com/ibyZek/pixel-art-assets/5e9c7b0f5d9158ba0bc64d575c9265a549bef487/diamond_coin_z_pixelart_1777927518181.png',
+                    'Platinum': 'https://raw.githubusercontent.com/ibyZek/pixel-art-assets/5e9c7b0f5d9158ba0bc64d575c9265a549bef487/platinum_coin_z_pixelart_1777927530534.png'
+                };
+                
+                return `
+                <div class="inventory-card-pro" style="border-top: 3px solid ${colors[item.rarity] || '#fff'}">
+                    <div class="unlocked-badge">KULLANIMA HAZIR</div>
+                    <img src="${imgs[item.rarity]}" class="item-icon-large">
+                    <div class="card-title-group">
+                        <div class="item-name-tag" style="color: ${colors[item.rarity]}">${item.rarity} Coin</div>
+                        <div class="item-id-tag">Oyun ID: #${item.id}</div>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn-pro use-now" onclick='startSpend(${JSON.stringify(item)})'>KULLAN</button>
+                    </div>
+                </div>`;
+            }).join('');
+
+            html += steamItemsHtml + localItemsHtml;
+            if (!steamItemsHtml && !localItemsHtml) html = `<div class="empty-state"><p>Envanteriniz Boş</p></div>`;
+            html += '</div>';
+            invList.innerHTML = html;
+        } catch (e) {
+            console.error(e);
+            invList.innerHTML = '<p class="error">Yükleme hatası!</p>';
+        }
+    }
+
+    // --- ENVANTER AKSİYONLARI ---
+    // --- ENVANTER SENKRONİZASYONU (Artık eşyaları temizleme) ---
+    window.syncInventory = async () => {
+        if (!confirm('Steam envanterinizdeki açılmış ama silinmemiş eşyalar temizlenecek. Devam edilsin mi?')) return;
+        
+        showNotification('Senkronizasyon başlatıldı...', 'info');
+        try {
+            const steamInventory = await ipcRenderer.invoke('get-steam-inventory');
+            const localInventory = await (await fetch(`${API_BASE}/api/inventory/${steamUser.id}`)).json();
+            
+            // Yerel olarak açılmış Steam ID'lerini topla
+            const unlockedSteamIds = new Set((localInventory || []).filter(i => i.steamItemId).map(i => i.steamItemId.toString()));
+            
+            let count = 0;
+            for (const item of (steamInventory || [])) {
+                const id = (item.itemId || item.itemid || item.assetid || '').toString();
+                // Eğer bu eşya ID'si zaten yerel kütüphanede açılmış olarak kayıtlıysa, Steam'den SİL
+                if (id && unlockedSteamIds.has(id)) {
+                    await ipcRenderer.invoke('consume-item', id);
+                    count++;
+                }
+            }
+            
+            showNotification(`Temizlik tamamlandı: ${count} eşya Steam'den silindi.`, 'success');
+            refreshInventory();
+        } catch (e) {
+            console.error(e);
+            showNotification('Senkronizasyon hatası!', 'error');
+        }
+    };
+
+    const activeUnlocks = new Set();
+    window.openSteamLoot = async (assetId, itemDefId, event) => {
+        if (activeUnlocks.has(assetId)) return;
+        
+        if (!confirm('Bu eşyayı açmak istiyor musun? Steam envanterinden silinecek ve oyunda kullanılabilir hale gelecektir.')) return;
+        
+        const btn = event?.target;
+        if (!btn) return;
+        
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '⌛ Açılıyor...';
+        activeUnlocks.add(assetId);
+
+        try {
+            // 1. Steam'den Tüket (Consume)
+            const consumeRes = await ipcRenderer.invoke('consume-item', assetId);
+            if (!consumeRes.success) {
+                showNotification('Steam hatası: ' + (consumeRes.error || 'Bağlantı kesildi'), 'error');
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                activeUnlocks.delete(assetId);
+                return;
+            }
+
+            // 2. Lokal Veritabanına "Açılmış" Olarak Ekle
+            const defIdNum = parseInt(itemDefId);
+            const isColor = defIdNum >= 1000;
+            const rarityMap = {
+                100: 'CopperLock', 200: 'SilverLock', 300: 'GoldLock', 310: 'DiamondLock', 320: 'PlatinumLock',
+                400: 'CopperKey', 500: 'SilverKey', 600: 'GoldKey', 700: 'DiamondKey', 800: 'PlatinumKey'
+            };
+            const itemType = isColor ? 'Color' : (defIdNum >= 400 && defIdNum <= 800 ? 'Key' : 'Lock');
+            const rarity = isColor ? 'Legendary' : (rarityMap[defIdNum] || 'CopperLock');
+            
+            await fetch(`${API_BASE}/api/inventory/add-unlocked`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    steamId: steamUser.id, 
+                    rarity: rarity, 
+                    steamItemId: assetId,
+                    itemType: itemType,
+                    colorDefId: isColor ? defIdNum : null
+                })
+            });
+
+            showNotification('Hazine açıldı! KULLAN butonuyla aktif edebilirsin.', 'success');
+            activeUnlocks.delete(assetId);
+            setTimeout(() => {
+                refreshInventory();
+            }, 3000);
+        } catch (e) {
+            console.error(e);
+            showNotification('İşlem başarısız!', 'error');
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            activeUnlocks.delete(assetId);
+        }
+    };
+    window.activateColor = async (item) => {
+        if (!confirm('Bu rengi kalıcı olarak paletine eklemek istiyor musun?')) return;
+        
+        try {
+            const res = await fetch(`${API_BASE}/api/inventory/activate-color`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                showNotification('Renk kalıcı olarak açıldı! Paletine eklendi.', 'success');
+                await refreshInventory(); // Await because it's async now and we want initPalette to run after
+            } else {
+                showNotification(data.msg || 'Aktivasyon başarısız!', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            showNotification('Hata oluştu!', 'error');
+        }
+    };
+
+    window.sellOnSteam = (itemId) => {
+        const APP_ID = 4704280;
+        const inventoryUrl = `https://steamcommunity.com/my/inventory/#${APP_ID}`;
+        if (ipcRenderer) {
+            ipcRenderer.send('open-external-url', inventoryUrl);
+        } else {
+            window.open(inventoryUrl, '_blank');
+        }
+    };
+
+    document.getElementById('show-inventory')?.addEventListener('click', () => {
+        invModal.style.display = 'flex';
+        refreshInventory();
+    });
+
+
+    window.startSpend = (item) => {
+        // Her rarite için kilitlenecek 10x10 blok sayısı (User request)
+        const charges = { 
+            'CopperLock': 1, 
+            'SilverLock': 2, 
+            'GoldLock': 4, 
+            'DiamondLock': 6,
+            'PlatinumLock': 10,
+            'CopperKey': 1, 
+            'SilverKey': 2, 
+            'GoldKey': 4,
+            'DiamondKey': 6,
+            'PlatinumKey': 10
+        }[item.rarity] || 1;
+        pendingSpend = { ...item, charges, coords: [] };
+        invModal.style.display = 'none';
+        const typeName = item.rarity.includes('Key') ? 'Aktif Etme' : 'Kilitleme';
+        showNotification(`${item.rarity} Hazırlanıyor: Haritada ${charges} adet 10x10 bölge seç! (${typeName})`, 'info');
+        render();
+    };
+
+    document.getElementById('close-inventory')?.addEventListener('click', () => invModal.style.display = 'none');
+
+    function paintPixel(x, y, color) {
+        // --- KİLİT KONTROLÜ (İstemci Tarafı) ---
+        const isExpansion = (x >= 960 || y >= 540);
+        if (isExpansion) {
+            const blockX = Math.floor(x / 10) * 10;
+            const blockY = Math.floor(y / 10) * 10;
+            if (!myUnlockedAreas.has(`${blockX}-${blockY}`)) {
+                showNotification('Bu bölge henüz kilitli! Bir anahtar ile açmalısın.', 'error');
+                sfx.error();
+                return;
+            }
+        }
+
+        if (!color) color = selectedColor;
+        console.log(`[Paint] Attempting to paint at ${x},${y} with color ${color}`);
+        
+        // Optimistic Update: Hemen boyanmış gibi göster
+        const key = `${x}-${y}`;
+        pixelData.set(key, { color: color, lockExpires: new Date(Date.now() + 10000).toISOString() });
+        render();
+
+        lastPaintTimestamp = Date.now();
+        socket.emit('paint', { 
+            x, y, color, 
+            steamId: steamUser.id, 
+            userName: steamUser.name, 
+            isPremium: steamUser.isPremium 
+        });
+        
+        updateSteamPresence(`${x}, ${y} Koordinatını Boyadı`);
+    }
+
+
+
+    function initPalette() {
+        const paletteList = document.getElementById('palette-list');
+        paletteList.innerHTML = '';
+        
+        // Temel renkler + Sunucudan gelen kalıcı renkleri birleştir
+        const myUnlockedArray = Array.from(myUnlockedColors || []).map(code => ({
+            code: code,
+            isUnlocked: true
+        }));
+        const allColors = [...baseColors, ...myUnlockedArray];
+        
+        allColors.forEach(color => {
+            const item = document.createElement('div');
+            item.className = 'color-item' + (color.code === selectedColor ? ' active' : '');
+            if (color.isUnlocked) item.classList.add('rare-color');
+            
+            item.innerHTML = `
+                <div class="color-preview" style="background:${color.code}"></div>
+                ${color.isUnlocked ? '<div class="rare-star">⭐</div>' : ''}
+            `;
+            
+            item.addEventListener('click', () => {
+                selectedColor = color.code;
+                gameSettings.lastColor = selectedColor;
+                saveSettingsToCloud();
+                document.querySelectorAll('.color-item').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+                paintPixel(selectedPixel.x, selectedPixel.y, selectedColor);
+            });
+            paletteList.appendChild(item);
+        });
+
+        // --- DRAG-TO-SCROLL (Sol tıkla sürükleyerek kaydır) ---
+        let isDragging = false;
+        let startX = 0;
+        let scrollLeft = 0;
+
+        paletteList.addEventListener('mousedown', (e) => {
+            // Renk kutucuğuna tıklandıysa drag başlatma
+            if (e.target.closest('.color-item')) return;
+            isDragging = true;
+            paletteList.classList.add('dragging');
+            startX = e.pageX - paletteList.offsetLeft;
+            scrollLeft = paletteList.scrollLeft;
+        });
+
+        paletteList.addEventListener('mouseleave', () => {
+            isDragging = false;
+            paletteList.classList.remove('dragging');
+        });
+
+        paletteList.addEventListener('mouseup', () => {
+            isDragging = false;
+            paletteList.classList.remove('dragging');
+        });
+
+        paletteList.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const x = e.pageX - paletteList.offsetLeft;
+            const walk = (x - startX) * 2; // Hız çarpanı
+            paletteList.scrollLeft = scrollLeft - walk;
+        });
+    }
+
+    // --- REFERANS ---
+    const refUpload = document.getElementById('ref-upload');
+    const refXInput = document.getElementById('ref-x');
+    const refYInput = document.getElementById('ref-y');
+    const refScaleInput = document.getElementById('ref-scale');
+    const refLockBtn = document.getElementById('ref-lock');
+    const refShareBtn = document.getElementById('ref-share');
+    const refDeleteBtn = document.getElementById('ref-delete');
+    
+    let isSharedRef = false; // Başkasından gelen referans mı?
+
+    refUpload?.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                refImage = img;
+                
+                // Akıllı Sığdırma (Auto-fit)
+                const scaleX = GRID_WIDTH / img.width;
+                const scaleY = GRID_HEIGHT / img.height;
+                refPos.scale = Math.min(scaleX, scaleY, 1); // Tuale sığdır ama zaten küçükse büyütme
+                
+                // Merkezleme
+                refPos.x = (GRID_WIDTH - img.width * refPos.scale) / 2;
+                refPos.y = (GRID_HEIGHT - img.height * refPos.scale) / 2;
+
+                // UI Girişlerini Güncelle
+                if (refXInput) refXInput.value = Math.round(refPos.x);
+                if (refYInput) refYInput.value = Math.round(refPos.y);
+                if (refScaleInput) refScaleInput.value = refPos.scale.toFixed(2);
+                
+                render();
+                document.getElementById('ref-wrapper').classList.add('has-image');
+                showNotification("Referans yuklendi ve tuale sigdirildi.", "success");
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    refXInput?.addEventListener('input', (e) => { if(!isSharedRef) { refPos.x = parseFloat(e.target.value) || 0; render(); } });
+    refYInput?.addEventListener('input', (e) => { if(!isSharedRef) { refPos.y = parseFloat(e.target.value) || 0; render(); } });
+    refScaleInput?.addEventListener('input', (e) => { if(!isSharedRef) { refPos.scale = parseFloat(e.target.value) || 1; render(); } });
+    
+    refLockBtn?.addEventListener('click', () => {
+        refLocked = !refLocked;
+        refLockBtn.classList.toggle('active', refLocked);
+        refLockBtn.textContent = refLocked ? "Kilitli" : "Kitle";
+        showNotification(refLocked ? "Referans kilitlendi." : "Referans kilidi acildi.", "info");
+    });
+
+    refShareBtn?.addEventListener('click', () => {
+        if (!refImage) return;
+        
+        // Resmi dataURL'e çevir (küçültülmüş haliyle veya orijinal)
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = refImage.width;
+        tempCanvas.height = refImage.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(refImage, 0, 0);
+        const imageData = tempCanvas.toDataURL('image/png', 0.5); // Sıkıştırarak gönder
+
+        socket.emit('share_reference', {
+            imageData,
+            x: refPos.x,
+            y: refPos.y,
+            scale: refPos.scale,
+            opacity: refOpacity,
+            userName: steamUser.name
+        });
+    });
+
+    refDeleteBtn?.addEventListener('click', () => {
+        refImage = null;
+        isSharedRef = false;
+        document.getElementById('ref-wrapper').classList.remove('has-image');
+        // Girişleri tekrar aktif et (eğer pasifse)
+        [refXInput, refYInput, refScaleInput].forEach(el => { if(el) el.disabled = false; });
+        render();
+        showNotification("Referans silindi.", "info");
+    });
+
+    document.getElementById('ref-opacity')?.addEventListener('input', (e) => { 
+        refOpacity = e.target.value; 
+        render(); 
+    });
+
+    // --- SHARED REFERENCE LISTENER ---
+    socket.on('reference_shared', (data) => {
+        // Test için kendi paylaştığımızı da görmemize izin verelim
+        const logContainer = document.getElementById('activity-log');
+        if (!logContainer) return;
+
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+        div.innerHTML = `
+            <span class="time">${data.timestamp}</span>
+            <strong>${data.userName}</strong> bir şablon paylaştı!
+            <br>
+            <button class="btn-accept-ref" id="accept-ref-${data.timestamp.replace(':','-')}">Kabul Et</button>
+        `;
+        logContainer.prepend(div);
+
+        div.querySelector('.btn-accept-ref').onclick = () => {
+            const img = new Image();
+            img.onload = () => {
+                refImage = img;
+                refPos.x = data.x;
+                refPos.y = data.y;
+                refPos.scale = data.scale;
+                refOpacity = data.opacity;
+                isSharedRef = true; // Ayar yapmasını engelle
+
+                // UI Güncelle
+                if (refXInput) { refXInput.value = Math.round(refPos.x); refXInput.disabled = true; }
+                if (refYInput) { refYInput.value = Math.round(refPos.y); refYInput.disabled = true; }
+                if (refScaleInput) { refScaleInput.value = refPos.scale.toFixed(2); refScaleInput.disabled = true; }
+                const opInput = document.getElementById('ref-opacity');
+                if (opInput) opInput.value = refOpacity;
+
+                document.getElementById('ref-wrapper').classList.add('has-image');
+                render();
+                showNotification(`${data.userName} kullanıcısının referansı yüklendi (Salt Okunur).`, "success");
+            };
+            img.src = data.imageData;
+        };
+    });
+
+    // --- SNAPSHOTS ---
+    const snapshotsModal = document.getElementById('snapshots-modal');
+    const snapshotsList = document.getElementById('snapshots-list');
+    document.getElementById('show-snapshots')?.addEventListener('click', async () => {
+        snapshotsModal.style.display = 'flex';
+        const files = await (await fetch(`${API_BASE}/api/snapshots`)).json();
+        snapshotsList.innerHTML = files.map(file => `
+            <div class="snapshot-card">
+                <img src="/snapshots/${file}">
+                <div class="snapshot-info"><span>${file}</span></div>
+            </div>`).join('');
+    });
+    document.getElementById('close-modal')?.addEventListener('click', () => snapshotsModal.style.display = 'none');
+
+    const toggleUiBtn = document.getElementById('toggle-ui');
+    toggleUiBtn?.addEventListener('click', () => {
+        document.body.classList.toggle('minimal-ui');
+        setTimeout(resizeCanvas, 450);
+    });
+
+    const toggleLocks = document.getElementById('toggle-locks');
+    if (toggleLocks) {
+        toggleLocks.addEventListener('change', (e) => {
+            showLockBoundaries = e.target.checked;
+            render();
+        });
+    }
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        // Remove event listeners
+        if (typeof resizeCanvas === 'function') {
+            window.removeEventListener('resize', resizeCanvas);
+        }
+    });
+
+    initPalette();
+    // --- SOHBET SİSTEMİ ---
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendChatBtn = document.getElementById('send-chat');
+
+    function addChatMessage(msg) {
+        if (!chatMessages) return;
+        const div = document.createElement('div');
+        div.className = 'chat-msg';
+        div.innerHTML = `
+            <img src="${msg.avatar || 'assets/default-avatar.png'}" class="avatar">
+            <div class="content">
+                <div class="user-info">
+                    <span class="username">${msg.userName}</span>
+                    <span class="time">${msg.timestamp}</span>
+                </div>
+                <div class="text">${msg.text}</div>
+            </div>
+        `;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function sendChatMessage() {
+        const text = chatInput.value.trim();
+        if (text === '') return;
+        
+        socket.emit('chat_message', {
+            text: text,
+            userName: steamUser.name,
+            steamId: steamUser.id,
+            avatar: steamUser.avatar
+        });
+        
+        chatInput.value = '';
+    }
+
+    sendChatBtn?.addEventListener('click', sendChatMessage);
+    chatInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendChatMessage();
+    });
+
+    socket.on('new_chat_message', (msg) => {
+        addChatMessage(msg);
+    });
+
+    socket.on('init_chat', (history) => {
+        if (!chatMessages) return;
+        chatMessages.innerHTML = '';
+        history.forEach(msg => addChatMessage(msg));
+    });
+
+    initCanvas();
+    initSteamUI();
+});

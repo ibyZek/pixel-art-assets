@@ -1,0 +1,280 @@
+{
+  "appid": 4704280,
+  "items": [
+    {
+      "itemdefid": 100,
+      "type": "item",
+      "name": "Bakır Kilit (Copper Lock)",
+      "description": "Used to protect a 10x10 area for 30 minutes.",
+      "dynamic_props_description_turkish": "Bir 10x10 alanı 30 dakikalığına korur.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/copper_lock.png",
+      "background_color": "CD7F32",
+      "name_color": "CD7F32",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 200,
+      "type": "item",
+      "name": "Gümüş Kilit (Silver Lock)",
+      "description": "Used to protect a 10x10 area for 1 hour.",
+      "dynamic_props_description_turkish": "Bir 10x10 alanı 1 saatliğine korur.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/silver_lock.png",
+      "background_color": "C0C0C0",
+      "name_color": "C0C0C0",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 300,
+      "type": "item",
+      "name": "Altın Kilit (Gold Lock)",
+      "description": "Used to protect a 10x10 area for 2 hours.",
+      "dynamic_props_description_turkish": "Bir 10x10 alanı 2 saatliğine korur.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/gold_lock.png",
+      "background_color": "FFD700",
+      "name_color": "FFD700",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 310,
+      "type": "item",
+      "name": "Elmas Kilit (Diamond Lock)",
+      "description": "Used to protect a 10x10 area for 6 hours.",
+      "dynamic_props_description_turkish": "Bir 10x10 alanı 6 saatliğine korur.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/diamond_lock.png",
+      "background_color": "00FFFF",
+      "name_color": "00FFFF",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 320,
+      "type": "item",
+      "name": "Pırlanta Kilit (Platinum Lock)",
+      "description": "Used to protect a 10x10 area for 12 hours.",
+      "dynamic_props_description_turkish": "Bir 10x10 alanı 12 saatliğine korur.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/platinum_lock.png",
+      "background_color": "E5E4E2",
+      "name_color": "E5E4E2",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 400,
+      "type": "item",
+      "name": "Bakır Anahtar (Copper Key)",
+      "description": "Permanently unlocks a 10x10 block in the expansion zone.",
+      "dynamic_props_description_turkish": "Genişleme bölgesinde bir 10x10 bloğu kalıcı olarak aktif eder.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/copper_key.png",
+      "background_color": "4AE2FF",
+      "name_color": "4AE2FF",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 500,
+      "type": "item",
+      "name": "Gümüş Anahtar (Silver Key)",
+      "description": "Permanently unlocks 4 blocks (20x20) in the expansion zone.",
+      "dynamic_props_description_turkish": "Genişleme bölgesinde 4 bloğu (20x20) kalıcı olarak aktif eder.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/silver_key.png",
+      "background_color": "A34AFF",
+      "name_color": "A34AFF",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 600,
+      "type": "item",
+      "name": "Altın Anahtar (Gold Key)",
+      "description": "Permanently unlocks 16 blocks (40x40) in the expansion zone.",
+      "dynamic_props_description_turkish": "Genişleme bölgesinde 16 bloğu (40x40) kalıcı olarak aktif eder.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/gold_key.png",
+      "background_color": "FF4A4A",
+      "name_color": "FF4A4A",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 700,
+      "type": "item",
+      "name": "Elmas Anahtar (Diamond Key)",
+      "description": "Permanently unlocks 36 blocks (60x60) in the expansion zone.",
+      "dynamic_props_description_turkish": "Genişleme bölgesinde 36 bloğu (60x60) kalıcı olarak aktif eder.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/diamond_key.png",
+      "background_color": "00FFFF",
+      "name_color": "00FFFF",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 800,
+      "type": "item",
+      "name": "Pırlanta Anahtar (Platinum Key)",
+      "description": "Permanently unlocks 64 blocks (80x80) in the expansion zone.",
+      "dynamic_props_description_turkish": "Genişleme bölgesinde 64 bloğu (80x80) kalıcı olarak aktif eder.\n\n📍 Konum: %DISCOVERY_LOCATION%\n📅 Tarih: %DISCOVERY_TIME%\n👤 Kaşif: %FOUND_BY%",
+      "icon_url": "https://raw.githubusercontent.com/ibyZek/pixel-art-assets/main/platinum_key.png",
+      "background_color": "E5E4E2",
+      "name_color": "E5E4E2",
+      "tradable": true,
+      "marketable": true,
+      "use_dynamic_props": true
+    },
+    {
+      "itemdefid": 1001, "type": "item", "name": "Kraliyet Moru (Royal Purple)", "description": "A rare royal purple color for your palette.",
+      "background_color": "6A0DAD", "name_color": "6A0DAD", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1002, "type": "item", "name": "Zümrüt Yeşili (Emerald Green)", "description": "A rare emerald green color.",
+      "background_color": "50C878", "name_color": "50C878", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1003, "type": "item", "name": "Mercan Kırmızısı (Coral Red)", "description": "A vibrant coral red color.",
+      "background_color": "FF6B6B", "name_color": "FF6B6B", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1004, "type": "item", "name": "Okyanus Mavisi (Ocean Blue)", "description": "A deep ocean blue color.",
+      "background_color": "0077B6", "name_color": "0077B6", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1005, "type": "item", "name": "Gün Batımı (Sunset Orange)", "description": "A warm sunset orange color.",
+      "background_color": "FF8C42", "name_color": "FF8C42", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1006, "type": "item", "name": "Lavanta (Lavender)", "description": "A soft lavender color.",
+      "background_color": "B57EDC", "name_color": "B57EDC", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1007, "type": "item", "name": "Deniz Mavisi (Teal)", "description": "A rich teal color.",
+      "background_color": "008080", "name_color": "008080", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1008, "type": "item", "name": "Gül Pembesi (Rose Pink)", "description": "A vivid rose pink color.",
+      "background_color": "FF007F", "name_color": "FF007F", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1009, "type": "item", "name": "Zeytin Yeşili (Olive Green)", "description": "An earthy olive green color.",
+      "background_color": "6B8E23", "name_color": "6B8E23", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1010, "type": "item", "name": "Gök Mavisi (Sky Blue)", "description": "A clear sky blue color.",
+      "background_color": "87CEEB", "name_color": "87CEEB", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1011, "type": "item", "name": "Koyu Kırmızı (Crimson)", "description": "A deep crimson color.",
+      "background_color": "DC143C", "name_color": "DC143C", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1012, "type": "item", "name": "Orman Yeşili (Forest Green)", "description": "A lush forest green color.",
+      "background_color": "228B22", "name_color": "228B22", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1013, "type": "item", "name": "Çivit (Indigo)", "description": "A dark indigo color.",
+      "background_color": "4B0082", "name_color": "4B0082", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1014, "type": "item", "name": "Şeftali (Peach)", "description": "A soft peach color.",
+      "background_color": "FFBE98", "name_color": "FFBE98", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1015, "type": "item", "name": "Turkuaz (Turquoise)", "description": "A bright turquoise color.",
+      "background_color": "40E0D0", "name_color": "40E0D0", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1016, "type": "item", "name": "Bordo (Maroon)", "description": "A rich maroon color.",
+      "background_color": "800000", "name_color": "800000", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1017, "type": "item", "name": "Nane Yeşili (Mint)", "description": "A fresh mint green color.",
+      "background_color": "98FF98", "name_color": "98FF98", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1018, "type": "item", "name": "Arduvaz Mavisi (Slate Blue)", "description": "A muted slate blue color.",
+      "background_color": "6A5ACD", "name_color": "6A5ACD", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1019, "type": "item", "name": "Kehribar (Amber)", "description": "A warm amber color.",
+      "background_color": "FFBF00", "name_color": "FFBF00", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1020, "type": "item", "name": "Pudra Pembesi (Dusty Rose)", "description": "A delicate dusty rose color.",
+      "background_color": "DCAE96", "name_color": "DCAE96", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1021, "type": "item", "name": "Neon Pink", "description": "A glowing neon pink color.",
+      "background_color": "FF6EC7", "name_color": "FF6EC7", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1022, "type": "item", "name": "Neon Green", "description": "A glowing neon green color.",
+      "background_color": "39FF14", "name_color": "39FF14", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1023, "type": "item", "name": "Neon Blue", "description": "A glowing neon blue color.",
+      "background_color": "4D4DFF", "name_color": "4D4DFF", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1024, "type": "item", "name": "Neon Yellow", "description": "A glowing neon yellow color.",
+      "background_color": "FFFF33", "name_color": "FFFF33", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1025, "type": "item", "name": "Neon Orange", "description": "A glowing neon orange color.",
+      "background_color": "FF6700", "name_color": "FF6700", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1026, "type": "item", "name": "Neon Purple", "description": "A glowing neon purple color.",
+      "background_color": "BC13FE", "name_color": "BC13FE", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1027, "type": "item", "name": "Neon Cyan", "description": "A glowing neon cyan color.",
+      "background_color": "00FFFF", "name_color": "00FFFF", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1028, "type": "item", "name": "Neon Red", "description": "A glowing neon red color.",
+      "background_color": "FF073A", "name_color": "FF073A", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1029, "type": "item", "name": "Neon Lime", "description": "A glowing neon lime color.",
+      "background_color": "CCFF00", "name_color": "CCFF00", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1030, "type": "item", "name": "Neon Magenta", "description": "A glowing neon magenta color.",
+      "background_color": "FF00FF", "name_color": "FF00FF", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1031, "type": "item", "name": "Elmas Parıltısı (Diamond Shine)", "description": "An ultra-rare diamond shine color.",
+      "background_color": "B9F2FF", "name_color": "B9F2FF", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1032, "type": "item", "name": "Altın Işıltısı (Gold Gleam)", "description": "An ultra-rare gold gleam color.",
+      "background_color": "FFD700", "name_color": "FFD700", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1033, "type": "item", "name": "Gümüş Parıltısı (Silver Shimmer)", "description": "An ultra-rare silver shimmer color.",
+      "background_color": "C0C0C0", "name_color": "C0C0C0", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1034, "type": "item", "name": "Yakut Kırmızısı (Ruby Glow)", "description": "An ultra-rare ruby glow color.",
+      "background_color": "E0115F", "name_color": "E0115F", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 1035, "type": "item", "name": "Safir Mavisi (Sapphire Blue)", "description": "An ultra-rare sapphire blue color.",
+      "background_color": "0F52BA", "name_color": "0F52BA", "tradable": true, "marketable": true
+    },
+    {
+      "itemdefid": 2000, "type": "item", "name": "Haftalık Tual Koleksiyonu (Weekly Canvas)",
+      "description": "This week's community pixel art canvas — a unique collectible snapshot. Awarded to one lucky participant who painted 100+ pixels.",
+      "background_color": "1a1a2e", "name_color": "00f2ff", "tradable": true, "marketable": true
+    }
+  ]
+}

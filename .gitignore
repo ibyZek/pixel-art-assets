@@ -1,0 +1,20 @@
+node_modules/
+.DS_Store
+pixel_art.db
+pixel_art.db-journal
+snapshots/
+temp_workshop_upload/
+*.log
+.env
+# main.js (tracked now)
+# baslat.bat
+# baslat.sh
+dist/
+build/
+sdk/
+
+
+
+
+# Ignore Smart Environment folder
+.smart-env

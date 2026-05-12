@@ -1,0 +1,259 @@
+{
+  "main": {
+    "id": "f4d5f1d9a32eef65",
+    "type": "split",
+    "children": [
+      {
+        "id": "98b7e0d3f4c43cec",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "6aec88a47cdc010c",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Grafik Görünümü"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "539e64847d2e0d51",
+    "type": "split",
+    "children": [
+      {
+        "id": "d84a190f300d77d5",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "6c9151bdc95427bc",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Dosya Gezgini"
+            }
+          },
+          {
+            "id": "0afb88b87d3e327e",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Ara"
+            }
+          },
+          {
+            "id": "f1ecc5ff3db3074c",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Yer İmleri"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 200
+  },
+  "right": {
+    "id": "7a82dc11a379b989",
+    "type": "split",
+    "children": [
+      {
+        "id": "0d20161291a3e685",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f7650cc21b9c57fa",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "CLAUDE-BOOTSTRAP.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "CLAUDE-BOOTSTRAP için geri bağlantılar"
+            }
+          },
+          {
+            "id": "2a064d2f6e47f60a",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Giden bağlantılar"
+            }
+          },
+          {
+            "id": "85332f7f354cd9bb",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiketler"
+            }
+          },
+          {
+            "id": "91b0f2d2aa99cc9d",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Tüm özellikler"
+            }
+          },
+          {
+            "id": "b1e40a8793320162",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Anahat"
+            }
+          },
+          {
+            "id": "d92b511a8b7100f2",
+            "type": "leaf",
+            "state": {
+              "type": "smart-connections-view",
+              "state": {},
+              "icon": "smart-connections",
+              "title": "Connections"
+            }
+          },
+          {
+            "id": "32da1133d2c7c507",
+            "type": "leaf",
+            "state": {
+              "type": "smart-lookup-view-connections",
+              "state": {},
+              "icon": "smart-lookup",
+              "title": "Lookup"
+            }
+          }
+        ],
+        "currentTab": 6
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "obsidian-excalidraw-plugin:New drawing": false,
+      "templater-obsidian:Templater": false,
+      "switcher:Hızlı geçişi aç": false,
+      "graph:Grafik görünümünü aç": false,
+      "canvas:Yeni tuval oluşturun": false,
+      "daily-notes:Bugünün Notunu Aç": false,
+      "templates:Şablon ekle": false,
+      "command-palette:Komut paletini aç": false,
+      "bases:Yeni taban oluştur": false,
+      "obsidian-kanban:Create new board": false,
+      "smart-connections:Smart Connections: Open connections view": false,
+      "smart-connections:Toggle Footer Connections": false,
+      "smart-connections:Smart Connections: Open random connection": false,
+      "smart-connections:Smart Lookup: Open lookup view": false,
+      "obsidian-git:Open Git source control": false
+    }
+  },
+  "active": "6aec88a47cdc010c",
+  "lastOpenFiles": [
+    "main.js",
+    "Wiki/02_Snippetlar/Kod_Parcalari.md",
+    "Wiki/01_Gorevler/Kanban.md",
+    "Wiki/Veritabani.md",
+    "Wiki/Steam_Entegrasyonu.md",
+    "Wiki/Proje_Durumu.md",
+    "Wiki/PROGRAM.md",
+    "Wiki/PIXELVERSE_STEAM_DURUM.md",
+    "Wiki/Mimari.md",
+    "Wiki/Giris.md",
+    "Wiki/Gelistirme_Rehberi.md",
+    "Wiki/Ganimmet_ve_Bocek_Sistemi.md",
+    "Wiki/Esya_Sistemi.md",
+    "Wiki/CLAUDE.md",
+    "Wiki/AUTORESEARCH.md",
+    "Wiki/API_Referansi.md",
+    "Wiki/02_Snippetlar",
+    "Wiki/00_Dashboard.md",
+    "Wiki/01_Gorevler",
+    "Wiki",
+    "Oyun/steam_test.js",
+    "Oyun/migrate.js",
+    "Oyun/gifshot.min.js",
+    "Oyun/force_migrate.js",
+    "Oyun/final_rescue.js",
+    "Oyun/db_check.js",
+    "Oyun/check_me.js",
+    "03_Resources/Pixelverse_Wiki/Mimari.md",
+    "claudex/node_modules/vite/node_modules/@esbuild/darwin-arm64/README.md",
+    "claudex/node_modules/@vitest/snapshot/node_modules/pathe/README.md",
+    "claudex/node_modules/@vitest/runner/node_modules/pathe/README.md",
+    "claudex/node_modules/vitest/node_modules/pathe/README.md",
+    "claudex/node_modules/vite-node/node_modules/pathe/README.md",
+    "claudex/node_modules/vite/node_modules/esbuild/README.md",
+    "claudex/node_modules/vite/node_modules/esbuild/LICENSE.md",
+    "claudex/node_modules/sucrase/node_modules/commander/Readme.md",
+    "claudex/docs/cover.jpg",
+    "logo.png",
+    "Başlıksız.canvas",
+    "mcp-servers/memory/node_modules/istanbul-reports/lib/html-spa/assets/sort-arrow-sprite.png",
+    "mcp-servers/memory/node_modules/istanbul-reports/lib/html/assets/sort-arrow-sprite.png",
+    "mcp-servers/memory/node_modules/istanbul-reports/lib/html/assets/favicon.png",
+    "items/silver_coin_z_pixelart_1777927505894.png",
+    "items/gold_coin_z_pixelart_1777927492083.png",
+    "items/platinum_coin_z_pixelart_1777927530534.png",
+    "items/diamond_coin_z_pixelart_1777927518181.png",
+    "assets/steam_assets/shortcut_icon_512.png",
+    "Başlıksız 1.canvas"
+  ]
+}

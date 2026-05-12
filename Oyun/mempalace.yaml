@@ -1,0 +1,40 @@
+wing: pixel_art
+rooms:
+- name: snapshots
+  description: Files from snapshots/
+  keywords:
+  - snapshots
+  - snapshots
+- name: scratch
+  description: Files from scratch/
+  keywords:
+  - scratch
+  - scratch
+- name: sdk
+  description: Files from sdk/
+  keywords:
+  - sdk
+  - sdk
+- name: temp_workshop_upload
+  description: Files from temp_workshop_upload/
+  keywords:
+  - temp_workshop_upload
+  - temp_workshop_upload
+- name: items
+  description: Files from items/
+  keywords:
+  - items
+  - items
+- name: design
+  description: Files from assets/
+  keywords:
+  - design
+  - assets
+- name: scripts
+  description: Files from tools/
+  keywords:
+  - scripts
+  - tools
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []

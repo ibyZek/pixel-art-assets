@@ -1,0 +1,19 @@
+{
+  "name": "pixel-art-wiki-root",
+  "version": "1.0.0",
+  "scripts": {
+    "app": "cd Oyun && npm run app",
+    "start": "node Oyun/server.js",
+    "install-all": "npm install && cd Oyun && npm install"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "canvas": "^3.2.3",
+    "dotenv": "^17.4.2",
+    "express": "^4.18.2",
+    "pg": "^8.20.0",
+    "socket.io": "^4.7.2",
+    "steamworks.js": "^0.4.0",
+    "youtube-chat": "^2.2.0"
+  }
+}

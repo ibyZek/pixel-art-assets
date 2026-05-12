@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="gifshot.min.js"></script>
+    <title>Pixelverse | Steam Edition</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Outfit:wght@500;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Viewport -->
+        <main class="main-viewport">
+            <div id="canvas-frame">
+                <canvas id="pixel-canvas"></canvas>
+            </div>
+            <div id="mini-map-container" class="mini-map-container">
+                <canvas id="mini-map-canvas"></canvas>
+                <div id="mini-map-viewfinder"></div>
+            </div>
+        </main>
+
+        <!-- Header -->
+        <header class="main-header glass-panel">
+            <div class="logo">
+                <img src="assets/logo.png" alt="Pixelverse Logo" class="header-logo">
+                <div class="logo-text">
+                    <h1>PIXELVERSE <small class="edition">STEAM</small></h1>
+                    <small class="inspiration">inspired by r/place</small>
+                </div>
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="label">Pikseller</span>
+                    <span class="value" id="total-pixels">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="label">Sunucu</span>
+                    <div class="live-indicator"><div class="live-dot"></div><span>Online</span></div>
+                </div>
+                <button id="open-market-header" class="btn" onclick="window.openSteamMarket()">Steam Market</button>
+                <button id="show-workshop" class="btn">Sablonlar</button>
+                <button id="show-inventory" class="btn" style="color:#ffd700; border:1px solid rgba(255,215,0,0.3)">Kütüphanem</button>
+                <button id="toggle-ui" class="btn">UI: Minimal</button>
+                <div class="toggle-container">
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-locks" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="toggle-label">Sınırları Göster</span>
+                </div>
+            </div>
+            <div class="steam-profile">
+                <div class="steam-user">
+                    <img src="" alt="Avatar" class="steam-avatar">
+                    <div class="steam-info">
+                        <div style="display:flex; align-items:center; gap:5px;">
+                            <span id="steam-username">Yükleniyor...</span>
+                        </div>
+                        <span id="steam-status">Çevrimiçi</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- UI Panels -->
+        <!-- Left Panel: Activity -->
+        <aside class="ui-overlay left-panel glass-panel">
+            <div class="section-header">
+                <h3>AKTİVİTE</h3>
+            </div>
+            <div id="activity-log" class="log-container"></div>
+        </aside>
+
+        <!-- Right Panel: Chat -->
+        <aside class="ui-overlay right-panel glass-panel">
+            <div class="panel-section chat-section">
+                <div class="section-header">
+                    <h3>SOHBET</h3>
+                </div>
+                <div id="chat-messages" class="chat-container"></div>
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="Mesaj yaz..." maxlength="200">
+                    <button id="send-chat" class="btn">Gonder</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Bottom Panel: Palette & Reference -->
+        <footer class="ui-overlay bottom-panel glass-panel">
+            <div class="bottom-layout">
+                <div class="palette-container">
+                    <div id="palette-list" class="palette-horizontal"></div>
+                </div>
+                
+                <div class="divider-v"></div>
+                
+                <div id="ref-wrapper" class="reference-container">
+                    <label for="ref-upload" class="btn-ref">Referans Al</label>
+                    <input type="file" id="ref-upload" accept="image/*" hidden>
+                    
+                    <div id="ref-edit-panel" class="ref-edit-panel glass-panel">
+                        <div class="ref-header">
+                            <span>DUZENLE</span>
+                            <button id="ref-delete" class="btn-mini">SIL</button>
+                        </div>
+                        <div class="ref-controls-grid">
+                            <div class="ref-input"><span>X</span><input type="number" id="ref-x" value="0"></div>
+                            <div class="ref-input"><span>Y</span><input type="number" id="ref-y" value="0"></div>
+                            <div class="ref-input"><span>Olcek</span><input type="number" id="ref-scale" value="1" step="0.1"></div>
+                            <div class="ref-input opacity"><span>Matlik</span><input type="range" id="ref-opacity" min="0" max="1" step="0.1" value="0.5"></div>
+                        </div>
+                        <div class="ref-footer">
+                            <button id="ref-lock" class="btn-ref-opt">Kitle</button>
+                            <button id="ref-share" class="btn-ref-opt share">Paylas</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </footer>
+
+        <div id="inspector" class="inspector glass-panel">
+            <span class="x-val">X: 0</span> <span class="y-val">Y: 0</span>
+        </div>
+    </div>
+    
+    <!-- Modals -->
+    <div id="snapshots-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-panel">
+            <div class="modal-header"><h2>Zaman Tuneli</h2><button id="close-modal" class="btn">Kapat</button></div>
+            <div id="snapshots-list" class="snapshots-grid"></div>
+        </div>
+    </div>
+
+    <div id="inventory-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Hazinelerim</h2>
+                <button id="close-inventory" class="btn">Kapat</button>
+            </div>
+            <div id="inventory-list" class="inventory-grid"></div>
+        </div>
+    </div>
+
+    <div id="workshop-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Sablon Yoneticisi</h2>
+                <button id="close-workshop" class="btn">Kapat</button>
+            </div>
+            
+            <div id="workshop-create" class="tab-content">
+                <p style="opacity: 0.6; margin-bottom: 20px;">Tual uzerinde bir alani sablon olarak yerel bilgisayariniza kaydedin.</p>
+                <button id="start-selection" class="btn-primary" style="background: linear-gradient(135deg, #00f2ff, #0072ff); border: none; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; width: 100%;">Alani Secmeye Basla</button>
+                
+                <div id="selection-info" style="display:none; margin-top:20px; background: rgba(255, 255, 255, 0.03); padding: 20px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                    <p style="color: #fff; opacity: 0.7; font-size: 13px; margin-bottom: 5px;">Secilen Koordinatlar</p>
+                    <p id="sel-coords" style="font-family: 'Outfit', sans-serif; font-weight: 600; color: #00f2ff; margin-bottom: 15px; font-size: 16px;">None</p>
+                    
+                    <input type="text" id="blueprint-name" placeholder="Sablon Ismi Giriniz" class="pixel-input" style="width: 100%; margin-bottom: 15px; padding: 12px; background: rgba(0,0,0,0.4); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;">
+                    
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                        <button id="save-local-jpg" class="btn" style="background: #ffffff; color: #000; border: none; font-weight: 700; height: 45px;">JPG Olarak Kaydet</button>
+                        <button id="view-timelapse" class="btn" style="background: rgba(103, 58, 183, 0.2); color: #9575CD; border: 1px solid #673AB7; height: 45px;">Time-Lapse Izle</button>
+                        <button id="cancel-selection" class="btn" style="margin-top: 10px; background: rgba(255, 69, 0, 0.1); color: #FF4500; border: 1px solid rgba(255, 69, 0, 0.3);">Iptal Et</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
+    <script src="utils.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
